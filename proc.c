@@ -341,6 +341,7 @@ forkret(void)
     first = 0;
     iinit(ROOTDEV);
     initlog(ROOTDEV);
+    readmbr(ROOTDEV);
   }
   
   // Return to "caller", actually trapret (see allocproc).

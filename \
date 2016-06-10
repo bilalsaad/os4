@@ -38,22 +38,16 @@ readsb(int dev, struct superblock *sb)
 }
 // reads the MBR from block 0 of ROOTDEV (w/e) stores the mbr and prints it out.
 void
-readmbr(int dev) {
+readmbr(int dev, struct mbr* mbr) {
   struct buf *bp;
-  struct dpartition* part = mbr.partitions;
-  int i;
+  struct dpartition* part = mbr->partitions;
   bp = bread(dev, 0); // location of le mbr.
-  memmove(&mbr, bp->data, sizeof(mbr));
+  memmove(mbr, bp->data, sizeof(*mbr));
   brelse(bp);
   // print output of partitions
-  for (i = 0; i < NPARTITIONS; ++ i) {
-    if (part[i].flags != 0) {  // guess this means it exists.
-      cprintf("Partition %d; bootable %s, type %s, offset %p, size %p \n",
-          i, GET_BOOT((part + i)) == PART_BOOTABLE ? "YES" : "NO",
-           part[i].type == FS_INODE ? "INODE" :
-           part[i].type == FS_FAT ?   "FAT" :
-           "???", part[i].offset, part[i].size);
-    }
+  while(part < mbr->partitions + NPARTITIONS) {
+    if (part->flags != 0) // guess this means it exists.
+    ++part;
   }
   
 }

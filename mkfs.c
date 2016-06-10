@@ -11,6 +11,9 @@
 #include "stat.h"
 #include "param.h"
 
+// Task 0  - adding the mbr struct given to us.
+#include "mbr.h"
+
 #ifndef static_assert
 #define static_assert(a, b) do { switch (0) case 0: case (a): ; } while (0)
 #endif
@@ -32,6 +35,14 @@ char zeroes[BSIZE];
 uint freeinode = 1;
 uint freeblock;
 
+// Task 0, our lovely struct mbr.
+struct mbr mbr;
+// Initializes the mbr to our liking.
+void initialize_mbr(struct mbr* mbr);
+// Adds a partition part to mbr at index index.
+void add_partition(struct mbr* mbr, struct dpartition* part, int index);
+// creates a partition with the give fields.
+void create_partition(struct dpartition*, char, uint, uint, uint);
 
 void balloc(int);
 void wsect(uint, void*);
@@ -40,6 +51,7 @@ void rinode(uint inum, struct dinode *ip);
 void rsect(uint sec, void *buf);
 uint ialloc(ushort type);
 void iappend(uint inum, void *p, int n);
+
 
 // convert to intel byte order
 ushort
@@ -72,6 +84,7 @@ main(int argc, char *argv[])
   struct dirent de;
   char buf[BSIZE];
   struct dinode din;
+  struct dpartition part;
 
 
   static_assert(sizeof(int) == 4, "Integers must be 4 bytes!");
@@ -93,6 +106,7 @@ main(int argc, char *argv[])
   // 1 fs block = 1 disk sector
   nmeta = 2 + nlog + ninodeblocks + nbitmap;
   nblocks = FSSIZE - nmeta;
+  
 
   sb.size = xint(FSSIZE);
   sb.nblocks = xint(nblocks);
@@ -102,16 +116,29 @@ main(int argc, char *argv[])
   sb.inodestart = xint(2+nlog);
   sb.bmapstart = xint(2+nlog+ninodeblocks);
 
-  printf("nmeta %d (boot, super, log blocks %u inode blocks %u, bitmap blocks %u) blocks %d total %d\n",
+  printf("nmeta %d (boot, super, log blocks %u inode blocks %u,"
+            " bitmap blocks %u) blocks %d total %d\n",
          nmeta, nlog, ninodeblocks, nbitmap, nblocks, FSSIZE);
 
+  // Task 0 initialize the mbr.
+  initialize_mbr(&mbr);
+  // Task 0 creating the partition.
+  create_partition(&part, PART_BOOTABLE, FS_INODE, 1, xint(FSSIZE));
+  add_partition(&mbr, &part, 0);
   freeblock = nmeta;     // the first free block that we can allocate
 
+  // Initialize the whole file system w/ zeroes.
   for(i = 0; i < FSSIZE; i++)
     wsect(i, zeroes);
 
+  // Task 0 -  We want to write the mbr to the 0th slot in the 'disk'.
+  memset(buf, 0, sizeof(buf));
+  memmove(buf, &mbr, sizeof(mbr));
+  wsect(0, buf);
+
   memset(buf, 0, sizeof(buf));
   memmove(buf, &sb, sizeof(sb));
+  // Write the super block to the #1 slot in the 'disk'.
   wsect(1, buf);
 
   rootino = ialloc(T_DIR);
@@ -295,3 +322,29 @@ iappend(uint inum, void *xp, int n)
   din.size = xint(off);
   winode(inum, &din);
 }
+
+// Task 0.
+void initialize_mbr(struct mbr* mbr) {
+  // initiliaze mbr in the following manner:
+  // bootstrap with 0z 446 bytes
+  // partitions with 0 16 * 4
+  // boot signature 2
+  // all in all 512 
+  memset(&mbr->bootstrap, 0, sizeof(mbr->bootstrap));
+  memset(&mbr->partitions, 0, sizeof(mbr->partitions));
+  mbr->magic[0] = 0x55;
+  mbr->magic[1] = 0xAA;
+}
+
+void add_partition(struct mbr* mbr, struct dpartition* part, int index) {
+  memmove(&mbr->partitions[index], part, sizeof(*part));
+}
+void create_partition(
+    struct dpartition* part, char bootable, uint type, uint offset, uint size) {
+
+  SET_BOOTABLE(part, bootable);
+  part->type = type;
+  part->offset = offset;
+  part->size = size;
+}
+
