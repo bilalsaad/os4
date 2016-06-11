@@ -18,6 +18,7 @@ struct superblock {
   uint logstart;     // Block number of first log block
   uint inodestart;   // Block number of first inode block
   uint bmapstart;    // Block number of first free map block
+  uint offset;       // Where we are on the disk.
 };
 
 #define NDIRECT 12
@@ -53,4 +54,3 @@ struct dirent {
   ushort inum;
   char name[DIRSIZ];
 };
-

@@ -23,16 +23,18 @@
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
 static void itrunc(struct inode*);
+int get_part();
 struct superblock sb;   // there should be one per dev, but we run with one dev
+struct superblock sbs[NPARTITIONS]; // super block per partition. me thinks
 struct mbr mbr;         // the single mbr - only one mbr i hope to god.
 
 // Read the super block.
 void
-readsb(int dev, struct superblock *sb)
+readsb(int dev, struct superblock *sb, int part)
 {
   struct buf *bp;
   
-  bp = bread(dev, 1);
+  bp = bread(dev, mbr.partitions[part].offset);
   memmove(sb, bp->data, sizeof(*sb));
   brelse(bp);
 }
@@ -46,7 +48,7 @@ readmbr(int dev) {
   memmove(&mbr, bp->data, sizeof(mbr));
   brelse(bp);
   // print output of partitions
-  for (i = 0; i < NPARTITIONS; ++ i) {
+  for (i = 0; i < NPARTITIONS; ++i) {
     if (part[i].flags != 0) {  // guess this means it exists.
       cprintf("Partition %d; bootable %s, type %s, offset %p, size %p \n",
           i, GET_BOOT((part + i)) == PART_BOOTABLE ? "YES" : "NO",
@@ -55,7 +57,6 @@ readmbr(int dev) {
            "???", part[i].offset, part[i].size);
     }
   }
-  
 }
 
 // Zero a block.
@@ -104,7 +105,7 @@ bfree(int dev, uint b)
   struct buf *bp;
   int bi, m;
 
-  readsb(dev, &sb);
+  readsb(dev, &sb, get_part());
   bp = bread(dev, BBLOCK(b, sb));
   bi = b % BPB;
   m = 1 << (bi % 8);
@@ -181,12 +182,13 @@ struct {
   struct spinlock lock;
   struct inode inode[NINODE];
 } icache;
-
+int get_part() {return 0;}
 void
 iinit(int dev)
 {
   initlock(&icache.lock, "icache");
-  readsb(dev, &sb);
+  readmbr(ROOTDEV);
+  readsb(dev, &sb, get_part());
   cprintf("sb: size %d nblocks %d ninodes %d nlog %d logstart %d inodestart %d bmap start %d\n", sb.size,
           sb.nblocks, sb.ninodes, sb.nlog, sb.logstart, sb.inodestart, sb.bmapstart);
 }

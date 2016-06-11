@@ -79,7 +79,7 @@ xint(uint x)
 int
 main(int argc, char *argv[])
 {
-  int i, cc, fd, sb_off;
+  int i, cc, fd;
   uint rootino, inum, off;
   struct dirent de;
   char buf[BSIZE];
@@ -104,22 +104,17 @@ main(int argc, char *argv[])
   }
 
   // 1 fs block = 1 disk sector
-  // Number of meatdata blocks 1 super block 1 mbr the logs the inodes the
-  // bitmap.
   nmeta = 2 + nlog + ninodeblocks + nbitmap;
-  // whats left is the data blocks.
   nblocks = FSSIZE - nmeta;
-  sb_off = 1;
   
-  // initializing the super block.
+
   sb.size = xint(FSSIZE);
   sb.nblocks = xint(nblocks);
   sb.ninodes = xint(NINODES);
-  sb.offset = sb_off; // should be where we on the disk..
   sb.nlog = xint(nlog);
-  sb.logstart = xint(sb_off+1);  // this should be offset from the start of part
-  sb.inodestart = xint(sb_off+1+nlog);  // see above
-  sb.bmapstart = xint(sb_off+1+nlog+ninodeblocks);  // see above
+  sb.logstart = xint(2);
+  sb.inodestart = xint(2+nlog);
+  sb.bmapstart = xint(2+nlog+ninodeblocks);
 
   printf("nmeta %d (boot, super, log blocks %u inode blocks %u,"
             " bitmap blocks %u) blocks %d total %d\n",
@@ -127,9 +122,8 @@ main(int argc, char *argv[])
 
   // Task 0 initialize the mbr.
   initialize_mbr(&mbr);
-
   // Task 0 creating the partition.
-  create_partition(&part, PART_BOOTABLE, FS_INODE, sb_off, xint(FSSIZE));
+  create_partition(&part, PART_BOOTABLE, FS_INODE, 1, xint(FSSIZE));
   add_partition(&mbr, &part, 0);
   freeblock = nmeta;     // the first free block that we can allocate
 
@@ -146,21 +140,18 @@ main(int argc, char *argv[])
   memmove(buf, &sb, sizeof(sb));
   // Write the super block to the #1 slot in the 'disk'.
   wsect(1, buf);
-  
-  // Create the root INODE. 
+
   rootino = ialloc(T_DIR);
-  assert(rootino == ROOTINO); //  Make sure it gets the right nubmer.
+  assert(rootino == ROOTINO);
 
   bzero(&de, sizeof(de));
-  // Create the ROOT INODE struct.
   de.inum = xshort(rootino);
   strcpy(de.name, ".");
-  // I think this adds a file to the root directory.
   iappend(rootino, &de, sizeof(de));
+
   bzero(&de, sizeof(de));
   de.inum = xshort(rootino);
   strcpy(de.name, "..");
-  // I think this adds a file to the root directory.
   iappend(rootino, &de, sizeof(de));
 
   for(i = 2; i < argc; i++){
@@ -177,27 +168,25 @@ main(int argc, char *argv[])
     // in place of system binaries like rm and cat.
     if(argv[i][0] == '_')
       ++argv[i];
-    // For each file given the args - we create an Inode and write it to the
-    // disk.
+
     inum = ialloc(T_FILE);
-    // Add a new directory entry to the root. with the new file info.
+
     bzero(&de, sizeof(de));
     de.inum = xshort(inum);
     strncpy(de.name, argv[i], DIRSIZ);
     iappend(rootino, &de, sizeof(de));
-    // Write the file to the disk.
+
     while((cc = read(fd, buf, sizeof(buf))) > 0)
       iappend(inum, buf, cc);
 
     close(fd);
   }
 
-  // fix size of root inode dir. I.e make it a multiple of BSIZE.
+  // fix size of root inode dir
   rinode(rootino, &din);
   off = xint(din.size);
   off = ((off/BSIZE) + 1) * BSIZE;
   din.size = xint(off);
-  din.partition = 0;
   winode(rootino, &din);
 
   balloc(freeblock);
@@ -302,7 +291,7 @@ iappend(uint inum, void *xp, int n)
 
   rinode(inum, &din);
   off = xint(din.size);
-  //printf("append inum %d at off %d sz %d\n", inum, off, n);
+  // printf("append inum %d at off %d sz %d\n", inum, off, n);
   while(n > 0){
     fbn = off / BSIZE;
     assert(fbn < MAXFILE);
@@ -352,6 +341,7 @@ void add_partition(struct mbr* mbr, struct dpartition* part, int index) {
 }
 void create_partition(
     struct dpartition* part, char bootable, uint type, uint offset, uint size) {
+
   SET_BOOTABLE(part, bootable);
   part->type = type;
   part->offset = offset;

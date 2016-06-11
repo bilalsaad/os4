@@ -11,10 +11,11 @@ struct file {
 
 // in-memory copy of an inode
 struct inode {
-  uint dev;           // Device number
-  uint inum;          // Inode number
-  int ref;            // Reference count
-  int flags;          // I_BUSY, I_VALID
+  uint dev;                             // Device number
+  uint inum;                            // Inode number
+  int ref;                              // Reference count
+  int flags;                            // I_BUSY, I_VALID
+  struct dpartition* partition;         // Which partition.
 
   short type;         // copy of disk inode
   short major;
