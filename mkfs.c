@@ -76,6 +76,8 @@ xint(uint x)
   return y;
 }
 
+int create_bootload_kernel(struct mbr* mbr, char * bootload, char * kernel);
+
 int
 main(int argc, char *argv[])
 {
@@ -103,13 +105,28 @@ main(int argc, char *argv[])
     exit(1);
   }
 
+  // Initialize the whole file system w/ zeroes.
+  for(i = 0; i < FSSIZE; i++)
+    wsect(i, zeroes);
+  // Task 0 initialize the mbr.
+  initialize_mbr(&mbr);
+  // Writes the bootloader + kernel to fs.img yikes.
+  sb_off = create_bootload_kernel(&mbr, "bootblock", "kernel");
+  if (sb_off < 1) {
+    fprintf(stderr, "Usage: create_bootload_kernel failed...\n");
+    close(fsfd);
+    exit(1);
+  }
+  // ************************************************************************
+  // ********************CREATES THE FIRST PARTITION*************************
+  // ************************************************************************
+  
   // 1 fs block = 1 disk sector
-  // Number of meatdata blocks 1 super block 1 mbr the logs the inodes the
+  // Number of metadata blocks 1 super block 1 mbr the logs the inodes the
   // bitmap.
   nmeta = 2 + nlog + ninodeblocks + nbitmap;
   // whats left is the data blocks.
   nblocks = FSSIZE - nmeta;
-  sb_off = 1;
   
   // initializing the super block.
   sb.size = xint(FSSIZE);
@@ -125,17 +142,12 @@ main(int argc, char *argv[])
             " bitmap blocks %u) blocks %d total %d\n",
          nmeta, nlog, ninodeblocks, nbitmap, nblocks, FSSIZE);
 
-  // Task 0 initialize the mbr.
-  initialize_mbr(&mbr);
 
   // Task 0 creating the partition.
   create_partition(&part, PART_BOOTABLE, FS_INODE, sb_off, xint(FSSIZE));
   add_partition(&mbr, &part, 0);
-  freeblock = nmeta;     // the first free block that we can allocate
+  freeblock = sb_off + nmeta;     // the first free block that we can allocate
 
-  // Initialize the whole file system w/ zeroes.
-  for(i = 0; i < FSSIZE; i++)
-    wsect(i, zeroes);
 
   // Task 0 -  We want to write the mbr to the 0th slot in the 'disk'.
   memset(buf, 0, sizeof(buf));
@@ -144,8 +156,8 @@ main(int argc, char *argv[])
 
   memset(buf, 0, sizeof(buf));
   memmove(buf, &sb, sizeof(sb));
-  // Write the super block to the #1 slot in the 'disk'.
-  wsect(1, buf);
+  // Write the super block to the #1 slot in the 'PARTITION'.
+  wsect(sb_off, buf);
   
   // Create the root INODE. 
   rootino = ialloc(T_DIR);
@@ -349,6 +361,7 @@ void initialize_mbr(struct mbr* mbr) {
 void add_partition(struct mbr* mbr, struct dpartition* part, int index) {
   memmove(&mbr->partitions[index], part, sizeof(*part));
 }
+
 void create_partition(
     struct dpartition* part, char bootable, uint type, uint offset, uint size) {
   SET_BOOTABLE(part, bootable);
@@ -356,4 +369,45 @@ void create_partition(
   part->offset = offset;
   part->size = size;
 }
+// Writes the kernel to the disk starting at block one. updates the mbr to hold
+// the correct bootloader... on success returns the next free block number after
+// the kernel on the disk. The disk is fsfd (maybe accept as an argument).
+int create_bootload_kernel(struct mbr* mbr, char * bl, char * kern) {
+  // First we open the boolloader file (bl) and the kernal file kern - 
+  // these files should exist in the current directory as us.
+  // step 1: read the bl file into the bootload section of the mbr.
+  // step 2: starting from sector 1 start writing the damn kernel file.
+  int blfd, kfd, cc, kern_blocks, i;
+  char buf[BSIZE];
+  blfd = open(bl, O_RDONLY);
+  if (blfd < 0) {
+    perror(bl);
+    return -1;
+  }
+  kfd = open(kern, O_RDONLY);
+  if (kfd < 0) {
+    perror(kern);
+    close(blfd);
+    return -1;
+  }
+  
+  // let us try and read the bootloader into the mbr at most sizeof(bootstap)
+  // bytes;
+  cc = read(blfd, mbr->bootstrap, sizeof(mbr->bootstrap)); 
+  if (cc < 0) {
+    return -1;
+  }
 
+  // Now we try to write the kernel to the disk starting from block 1
+  kern_blocks = 0;
+  i = 1;  // block index 
+  while ((cc = read(kfd, buf, sizeof(buf))) > 0) {
+    ++kern_blocks;
+    wsect(i, buf); 
+    ++i;
+  }
+  printf("the kernel took %d blocks \n", kern_blocks);
+
+  // the ith block should be safe for the super block now.
+  return i;
+}

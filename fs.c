@@ -24,6 +24,7 @@
 #define min(a, b) ((a) < (b) ? (a) : (b))
 static void itrunc(struct inode*);
 int get_part();
+void set_part(int);
 struct superblock sb;   // there should be one per dev, but we run with one dev
 struct superblock sbs[NPARTITIONS]; // super block per partition. me thinks
 struct mbr mbr;         // the single mbr - only one mbr i hope to god.
@@ -57,6 +58,15 @@ readmbr(int dev) {
            "???", part[i].offset, part[i].size);
     }
   }
+  while (part != mbr.partitions + NPARTITIONS) {
+    if (GET_BOOT(part) == PART_BOOTABLE) {
+      set_part(part - mbr.partitions);
+      cprintf("setting current partition to %d \n", part - mbr.partitions);
+      return;
+    }
+    ++part;
+  }
+  panic("no bootable partition found");
 }
 
 // Zero a block.
@@ -182,7 +192,6 @@ struct {
   struct spinlock lock;
   struct inode inode[NINODE];
 } icache;
-int get_part() {return 0;}
 void
 iinit(int dev)
 {
@@ -270,6 +279,8 @@ iget(uint dev, uint inum)
   ip->inum = inum;
   ip->ref = 1;
   ip->flags = 0;
+  // TODO() this seems shady..
+  ip->partition = mbr.partitions + get_part();
   release(&icache.lock);
 
   return ip;
@@ -675,3 +686,13 @@ nameiparent(char *path, char *name)
   return namex(path, 1, name);
 }
 
+// TODO() think this over..
+static int cur_part;
+int get_part() {
+  return cur_part;
+}
+
+void set_part(int p) {
+  // TODO() should this be synchronized?? i think so.
+  cur_part = p; 
+}
