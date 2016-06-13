@@ -52,7 +52,8 @@ void add_partition(struct mbr* mbr, struct dpartition* part, int index);
 // creates a partition with the give fields.
 void create_partition(struct dpartition*, char, uint, uint, uint);
 
-void root_handler(uint rootino, int argc, char ** argv) ;
+void root_handler(uint rootino, int argc, char ** argv);
+void allocated_handler(uint rootino, int argc, char ** argv);
 void balloc(int);
 void wsect(uint, void*);
 void winode(uint, struct dinode*);
@@ -93,6 +94,7 @@ main(int argc, char *argv[])
   char buf[BSIZE];
   struct dpartition part;
   struct init_part_opts part_opts;
+  char* files[3];
 
   static_assert(sizeof(int) == 4, "Integers must be 4 bytes!");
 
@@ -133,13 +135,19 @@ main(int argc, char *argv[])
   init_partition(&part, &part_opts);
 
   //lets try and add partitions here. 
+  files[0] = "foo1.txt";
+  files[1] = "foo2.txt";
+  files[2] = "foo3.txt";
+  part_opts.root_writer = allocated_handler;
+  part_opts.argc = 3;
+  part_opts.argv = files;
   for(i = 1; i < NPARTITIONS; ++i) {
     create_partition(&part, PART_ALLOCATED, FS_INODE,
         mbr.partitions[i-1].offset+ mbr.partitions[i-1].size,
         xint(FSSIZE));
     add_partition(&mbr, &part, i);
     // Now we want to initialize this partition.
-    init_partition(&part, 0);
+    init_partition(&part, &part_opts);
   }
   memset(buf, 0, sizeof(buf));
   memmove(buf, &mbr, sizeof(mbr));
@@ -439,3 +447,33 @@ void root_handler(uint rootino, int argc, char ** argv) {
     close(fd);
   }
 }
+
+void allocated_handler(uint rootino, int argc, char ** argv) {
+  int fd, i;
+  uint inum;
+  char buf[BSIZE];
+  struct dirent de;
+  int cc;
+  for(i = 0; i < argc; i++){
+    if((fd = open(argv[i], 0)) < 0){
+      perror(argv[i]);
+      exit(1);
+    }
+    
+    // For each file given the args - we create an Inode and write it to the
+    // disk.
+    inum = ialloc(T_FILE);
+    // Add a new directory entry to the root. with the new file info.
+    bzero(&de, sizeof(de));
+    de.inum = xshort(inum);
+    printf("writing to block %lu inode %d \n", IBLOCK(inum, sb), inum);
+    strncpy(de.name, argv[i], DIRSIZ);
+    iappend(rootino, &de, sizeof(de));
+    // Write the file to the disk.
+    while((cc = read(fd, buf, sizeof(buf))) > 0)
+      iappend(inum, buf, cc);
+
+    close(fd);
+  }
+}
+
