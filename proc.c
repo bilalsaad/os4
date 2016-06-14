@@ -6,7 +6,7 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
-
+#define d2 cprintf("%d %s \n", __LINE__, __func__)
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
@@ -95,10 +95,8 @@ userinit(void)
   p->tf->eflags = FL_IF;
   p->tf->esp = PGSIZE;
   p->tf->eip = 0;  // beginning of initcode.S
-
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
-
   p->state = RUNNABLE;
 }
 
@@ -340,7 +338,7 @@ forkret(void)
     // be run from main().
     first = 0;
     iinit(ROOTDEV);
-    initlog(ROOTDEV);
+    initlog(get_boot_block());
   }
   
   // Return to "caller", actually trapret (see allocproc).

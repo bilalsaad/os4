@@ -94,7 +94,6 @@ main(int argc, char *argv[])
   char buf[BSIZE];
   struct dpartition part;
   struct init_part_opts part_opts;
-  char* files[3];
 
   static_assert(sizeof(int) == 4, "Integers must be 4 bytes!");
 
@@ -124,7 +123,7 @@ main(int argc, char *argv[])
     exit(1);
   }
   // create first partition
-  create_partition(&part, PART_BOOTABLE, FS_INODE, sb_off, xint(FSSIZE));
+  create_partition(&part,PART_BOOTABLE , FS_INODE, sb_off, xint(FSSIZE));
   add_partition(&mbr, &part, 0);
   // 1 fs block = 1 disk sector
   // Number of metadata blocks 1 super block 1 mbr the logs the inodes the
@@ -135,14 +134,8 @@ main(int argc, char *argv[])
   init_partition(&part, &part_opts);
 
   //lets try and add partitions here. 
-  files[0] = "foo1.txt";
-  files[1] = "foo2.txt";
-  files[2] = "foo3.txt";
-  part_opts.root_writer = allocated_handler;
-  part_opts.argc = 3;
-  part_opts.argv = files;
   for(i = 1; i < NPARTITIONS; ++i) {
-    create_partition(&part, PART_ALLOCATED, FS_INODE,
+    create_partition(&part, PART_BOOTABLE, FS_INODE,
         mbr.partitions[i-1].offset+ mbr.partitions[i-1].size,
         xint(FSSIZE));
     add_partition(&mbr, &part, i);
@@ -418,9 +411,11 @@ void root_handler(uint rootino, int argc, char ** argv) {
   uint inum;
   char buf[BSIZE];
   struct dirent de;
+  char * tmp;
   int cc;
   for(i = 2; i < argc; i++){
     assert(index(argv[i], '/') == 0);
+    tmp = argv[i];
     if((fd = open(argv[i], 0)) < 0){
       perror(argv[i]);
       exit(1);
@@ -431,14 +426,14 @@ void root_handler(uint rootino, int argc, char ** argv) {
     // build operating system from trying to execute them
     // in place of system binaries like rm and cat.
     if(argv[i][0] == '_')
-      ++argv[i];
+      ++tmp;
     // For each file given the args - we create an Inode and write it to the
     // disk.
     inum = ialloc(T_FILE);
     // Add a new directory entry to the root. with the new file info.
     bzero(&de, sizeof(de));
     de.inum = xshort(inum);
-    strncpy(de.name, argv[i], DIRSIZ);
+    strncpy(de.name, tmp, DIRSIZ);
     iappend(rootino, &de, sizeof(de));
     // Write the file to the disk.
     while((cc = read(fd, buf, sizeof(buf))) > 0)

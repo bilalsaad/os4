@@ -4,7 +4,7 @@
 #include "stat.h"
 #include "user.h"
 #include "fcntl.h"
-
+#define d2 printf(1, "%d %s \n", __LINE__, __func__)
 char *argv[] = { "sh", 0 };
 
 int
@@ -27,6 +27,7 @@ main(void)
       exit();
     }
     if(pid == 0){
+      d2;
       exec("sh", argv);
       printf(1, "init: exec sh failed\n");
       exit();

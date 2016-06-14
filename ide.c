@@ -20,7 +20,7 @@
 
 #define IDE_CMD_READ  0x20
 #define IDE_CMD_WRITE 0x30
-
+#define d2 cprintf("%d %s \n", __LINE__, __func__)
 // idequeue points to the buf now being read/written to the disk.
 // idequeue->qnext points to the next buf to be processed.
 // You must hold idelock while manipulating queue.
@@ -73,8 +73,9 @@ idestart(struct buf *b)
 {
   if(b == 0)
     panic("idestart");
-  if(b->blockno >= FSSIZE)
+  if(b->blockno >= FSSIZE * 4) {
     panic("incorrect blockno");
+  }
   int sector_per_block =  BSIZE/SECTOR_SIZE;
   int sector = b->blockno * sector_per_block;
 
@@ -120,8 +121,9 @@ ideintr(void)
   wakeup(b);
   
   // Start disk on next buf in queue.
-  if(idequeue != 0)
+  if(idequeue != 0) {
     idestart(idequeue);
+  }
 
   release(&idelock);
 }
@@ -151,8 +153,9 @@ iderw(struct buf *b)
   *pp = b;
   
   // Start disk if necessary.
-  if(idequeue == b)
+  if(idequeue == b) {
     idestart(b);
+  }
   
   // Wait for request to finish.
   while((b->flags & (B_VALID|B_DIRTY)) != B_VALID){

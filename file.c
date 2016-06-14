@@ -8,7 +8,7 @@
 #include "fs.h"
 #include "file.h"
 #include "spinlock.h"
-
+#define d2 cprintf("%d %s \n", __LINE__, __func__)
 struct devsw devsw[NDEV];
 struct {
   struct spinlock lock;

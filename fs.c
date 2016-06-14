@@ -20,22 +20,23 @@
 #include "buf.h"
 #include "file.h"
 #include "mbr.h"
-
 #define min(a, b) ((a) < (b) ? (a) : (b))
+
 static void itrunc(struct inode*);
 int get_part();
 void set_part(int);
 struct superblock sb;   // there should be one per dev, but we run with one dev
-struct superblock sbs[NPARTITIONS]; // super block per partition. me thinks
+
+struct partition partitions[NPARTITIONS];
+struct partition* boot_part;      // the partition we boot from.
 struct mbr mbr;         // the single mbr - only one mbr i hope to god.
 
 // Read the super block.
 void
-readsb(int dev, struct superblock *sb, int part)
+readsb(struct partition* part, struct superblock *sb)
 {
   struct buf *bp;
-  
-  bp = bread(dev, mbr.partitions[part].offset);
+  bp = bread(part->dev, part->prt.offset);
   memmove(sb, bp->data, sizeof(*sb));
   brelse(bp);
 }
@@ -57,10 +58,13 @@ readmbr(int dev) {
            part[i].type == FS_FAT ?   "FAT" :
            "???", part[i].offset, part[i].size);
     }
+    partitions[i].dev = dev; 
+    partitions[i].prt = part[i];
   }
   while (part != mbr.partitions + NPARTITIONS) {
     if (GET_BOOT(part) == PART_BOOTABLE) {
       set_part(part - mbr.partitions);
+      boot_part = partitions + (part - mbr.partitions);
       cprintf("setting current partition to %d \n", part - mbr.partitions);
       return;
     }
@@ -110,13 +114,13 @@ balloc(uint dev)
 
 // Free a disk block.
 static void
-bfree(int dev, uint b)
+bfree(struct partition* prt, uint b)
 {
   struct buf *bp;
   int bi, m;
-
-  readsb(dev, &sb, get_part());
-  bp = bread(dev, BBLOCK(b, sb));
+  struct superblock sb;
+  readsb(prt, &sb);
+  bp = bread(prt->dev, BBLOCK(b, sb));
   bi = b % BPB;
   m = 1 << (bi % 8);
   if((bp->data[bi/8] & m) == 0)
@@ -196,24 +200,28 @@ void
 iinit(int dev)
 {
   initlock(&icache.lock, "icache");
-  readmbr(ROOTDEV);
-  readsb(dev, &sb, get_part());
-  cprintf("sb: size %d nblocks %d ninodes %d nlog %d logstart %d inodestart %d bmap start %d\n", sb.size,
-          sb.nblocks, sb.ninodes, sb.nlog, sb.logstart, sb.inodestart, sb.bmapstart);
+  readmbr(dev);
+  readsb(boot_part, &sb);
+  cprintf("sb: size %d nblocks %d ninodes %d nlog %d logstart %d"
+          " inodestart %d bmap start %d\n", sb.size,
+          sb.nblocks, sb.ninodes, sb.nlog,
+          sb.logstart, sb.inodestart, sb.bmapstart);
 }
 
-static struct inode* iget(uint dev, uint inum);
+static struct inode* iget(struct partition*, uint inum);
 
 //PAGEBREAK!
 // Allocate a new inode with the given type on device dev.
 // A free inode has a type of zero.
 struct inode*
-ialloc(uint dev, short type)
+ialloc(struct partition* prt, short type)
 {
   int inum;
   struct buf *bp;
   struct dinode *dip;
-
+  struct superblock sb;
+  uint dev = prt->dev;
+  readsb(prt, &sb);
   for(inum = 1; inum < sb.ninodes; inum++){
     bp = bread(dev, IBLOCK(inum, sb));
     dip = (struct dinode*)bp->data + inum%IPB;
@@ -222,7 +230,7 @@ ialloc(uint dev, short type)
       dip->type = type;
       log_write(bp);   // mark it allocated on the disk
       brelse(bp);
-      return iget(dev, inum);
+      return iget(prt, inum);
     }
     brelse(bp);
   }
@@ -235,8 +243,9 @@ iupdate(struct inode *ip)
 {
   struct buf *bp;
   struct dinode *dip;
-
-  bp = bread(ip->dev, IBLOCK(ip->inum, sb));
+  struct superblock sb; 
+  readsb(ip->prt, &sb);
+  bp = bread(ip->prt->dev, IBLOCK(ip->inum, sb));
   dip = (struct dinode*)bp->data + ip->inum%IPB;
   dip->type = ip->type;
   dip->major = ip->major;
@@ -252,7 +261,7 @@ iupdate(struct inode *ip)
 // and return the in-memory copy. Does not lock
 // the inode and does not read it from disk.
 static struct inode*
-iget(uint dev, uint inum)
+iget(struct partition* prt, uint inum)
 {
   struct inode *ip, *empty;
 
@@ -261,7 +270,7 @@ iget(uint dev, uint inum)
   // Is the inode already cached?
   empty = 0;
   for(ip = &icache.inode[0]; ip < &icache.inode[NINODE]; ip++){
-    if(ip->ref > 0 && ip->dev == dev && ip->inum == inum){
+    if(ip->ref > 0 && ip->prt == prt && ip->inum == inum){
       ip->ref++;
       release(&icache.lock);
       return ip;
@@ -275,12 +284,10 @@ iget(uint dev, uint inum)
     panic("iget: no inodes");
 
   ip = empty;
-  ip->dev = dev;
+  ip->prt = prt;
   ip->inum = inum;
   ip->ref = 1;
   ip->flags = 0;
-  // TODO() this seems shady..
-  ip->partition = mbr.partitions + get_part();
   release(&icache.lock);
 
   return ip;
@@ -304,7 +311,9 @@ ilock(struct inode *ip)
 {
   struct buf *bp;
   struct dinode *dip;
-
+  struct superblock sb;
+  if (ip->prt == 0)
+    ip->prt = boot_part;
   if(ip == 0 || ip->ref < 1)
     panic("ilock");
 
@@ -313,9 +322,9 @@ ilock(struct inode *ip)
     sleep(ip, &icache.lock);
   ip->flags |= I_BUSY;
   release(&icache.lock);
-
+  readsb(ip->prt, &sb);
   if(!(ip->flags & I_VALID)){
-    bp = bread(ip->dev, IBLOCK(ip->inum, sb));
+    bp = bread(ip->prt->dev, IBLOCK(ip->inum, sb));
     dip = (struct dinode*)bp->data + ip->inum%IPB;
     ip->type = dip->type;
     ip->major = dip->major;
@@ -397,7 +406,7 @@ bmap(struct inode *ip, uint bn)
 
   if(bn < NDIRECT){
     if((addr = ip->addrs[bn]) == 0)
-      ip->addrs[bn] = addr = balloc(ip->dev);
+      ip->addrs[bn] = addr = balloc(ip->prt->dev);
     return addr;
   }
   bn -= NDIRECT;
@@ -405,11 +414,11 @@ bmap(struct inode *ip, uint bn)
   if(bn < NINDIRECT){
     // Load indirect block, allocating if necessary.
     if((addr = ip->addrs[NDIRECT]) == 0)
-      ip->addrs[NDIRECT] = addr = balloc(ip->dev);
-    bp = bread(ip->dev, addr);
+      ip->addrs[NDIRECT] = addr = balloc(ip->prt->dev);
+    bp = bread(ip->prt->dev, addr);
     a = (uint*)bp->data;
     if((addr = a[bn]) == 0){
-      a[bn] = addr = balloc(ip->dev);
+      a[bn] = addr = balloc(ip->prt->dev);
       log_write(bp);
     }
     brelse(bp);
@@ -433,20 +442,20 @@ itrunc(struct inode *ip)
 
   for(i = 0; i < NDIRECT; i++){
     if(ip->addrs[i]){
-      bfree(ip->dev, ip->addrs[i]);
+      bfree(ip->prt, ip->addrs[i]);
       ip->addrs[i] = 0;
     }
   }
   
   if(ip->addrs[NDIRECT]){
-    bp = bread(ip->dev, ip->addrs[NDIRECT]);
+    bp = bread(ip->prt->dev, ip->addrs[NDIRECT]);
     a = (uint*)bp->data;
     for(j = 0; j < NINDIRECT; j++){
       if(a[j])
-        bfree(ip->dev, a[j]);
+        bfree(ip->prt, a[j]);
     }
     brelse(bp);
-    bfree(ip->dev, ip->addrs[NDIRECT]);
+    bfree(ip->prt, ip->addrs[NDIRECT]);
     ip->addrs[NDIRECT] = 0;
   }
 
@@ -458,7 +467,8 @@ itrunc(struct inode *ip)
 void
 stati(struct inode *ip, struct stat *st)
 {
-  st->dev = ip->dev;
+  // TODO() what should be done with stat
+  st->dev = ip->prt->dev;
   st->ino = ip->inum;
   st->type = ip->type;
   st->nlink = ip->nlink;
@@ -485,7 +495,7 @@ readi(struct inode *ip, char *dst, uint off, uint n)
     n = ip->size - off;
 
   for(tot=0; tot<n; tot+=m, off+=m, dst+=m){
-    bp = bread(ip->dev, bmap(ip, off/BSIZE));
+    bp = bread(ip->prt->dev, bmap(ip, off/BSIZE));
     m = min(n - tot, BSIZE - off%BSIZE);
     memmove(dst, bp->data + off%BSIZE, m);
     brelse(bp);
@@ -513,7 +523,7 @@ writei(struct inode *ip, char *src, uint off, uint n)
     return -1;
 
   for(tot=0; tot<n; tot+=m, off+=m, src+=m){
-    bp = bread(ip->dev, bmap(ip, off/BSIZE));
+    bp = bread(ip->prt->dev, bmap(ip, off/BSIZE));
     m = min(n - tot, BSIZE - off%BSIZE);
     memmove(bp->data + off%BSIZE, src, m);
     log_write(bp);
@@ -552,15 +562,15 @@ dirlookup(struct inode *dp, char *name, uint *poff)
       panic("dirlink read");
     if(de.inum == 0)
       continue;
+    //cprintf("COMPARING %s de: %s \n", name, de.name);
     if(namecmp(name, de.name) == 0){
       // entry matches path element
       if(poff)
         *poff = off;
       inum = de.inum;
-      return iget(dp->dev, inum);
-    }
+      return iget(dp->prt, inum);
+   }
   }
-
   return 0;
 }
 
@@ -643,17 +653,26 @@ namex(char *path, int nameiparent, char *name)
 {
   struct inode *ip, *next;
 
+  
   if(*path == '/')
-    ip = iget(ROOTDEV, ROOTINO);
-  else
+    ip = iget(boot_part, ROOTINO);
+  else {
+    
     ip = idup(proc->cwd);
+    
+  }
 
   while((path = skipelem(path, name)) != 0){
+    
     ilock(ip);
+    
     if(ip->type != T_DIR){
+      
       iunlockput(ip);
+      
       return 0;
     }
+    
     if(nameiparent && *path == '\0'){
       // Stop one level early.
       iunlock(ip);
@@ -677,13 +696,21 @@ struct inode*
 namei(char *path)
 {
   char name[DIRSIZ];
-  return namex(path, 0, name);
+  struct inode* ret;
+  
+  ret = namex(path, 0, name);
+  
+  return ret;
 }
 
 struct inode*
 nameiparent(char *path, char *name)
 {
-  return namex(path, 1, name);
+  struct inode* ret;
+  
+  ret =  namex(path, 1, name);
+  
+  return ret;
 }
 
 // TODO() think this over..
@@ -695,4 +722,7 @@ int get_part() {
 void set_part(int p) {
   // TODO() should this be synchronized?? i think so.
   cur_part = p; 
+}
+struct partition* get_boot_block() {
+  return boot_part;
 }

@@ -6,7 +6,7 @@
 #include "defs.h"
 #include "x86.h"
 #include "elf.h"
-
+#define d2 cprintf("%d %s \n", __LINE__, __func__);
 int
 exec(char *path, char **argv)
 {
@@ -52,7 +52,6 @@ exec(char *path, char **argv)
   iunlockput(ip);
   end_op();
   ip = 0;
-
   // Allocate two pages at the next page boundary.
   // Make the first inaccessible.  Use the second as the user stack.
   sz = PGROUNDUP(sz);

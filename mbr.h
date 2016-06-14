@@ -31,9 +31,5 @@ struct mbr {
 
 struct partition {
 	uint dev;
-
-	uint flags;	
-	uint type;	
-	uint offset;
-	uint size;
+  struct dpartition prt;
 };

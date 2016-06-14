@@ -8,6 +8,7 @@ struct rtcdate;
 struct spinlock;
 struct stat;
 struct superblock;
+struct partition;
 
 // bio.c
 void            binit(void);
@@ -34,11 +35,12 @@ int             filestat(struct file*, struct stat*);
 int             filewrite(struct file*, char*, int n);
 
 // fs.c
-void            readsb(int, struct superblock*, int);
+void            readsb(struct partition*, struct superblock*);
 void            readmbr(int dev);
+struct partition* get_boot_block();
 int             dirlink(struct inode*, char*, uint);
 struct inode*   dirlookup(struct inode*, char*, uint*);
-struct inode*   ialloc(uint, short);
+struct inode*   ialloc(struct partition*, short);
 struct inode*   idup(struct inode*);
 void            iinit(int dev);
 void            ilock(struct inode*);
@@ -82,7 +84,7 @@ void            lapicstartap(uchar, uint);
 void            microdelay(int);
 
 // log.c
-void            initlog(int dev);
+void            initlog(struct partition*);
 void            log_write(struct buf*);
 void            begin_op();
 void            end_op();

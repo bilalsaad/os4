@@ -4,6 +4,7 @@
 #include "spinlock.h"
 #include "fs.h"
 #include "buf.h"
+#include "mbr.h"
 
 // Simple logging that allows concurrent FS system calls.
 //
@@ -50,17 +51,17 @@ static void recover_from_log(void);
 static void commit();
 
 void
-initlog(int dev)
+initlog(struct partition* prt)
 {
   if (sizeof(struct logheader) >= BSIZE)
     panic("initlog: too big logheader");
 
   struct superblock sb;
   initlock(&log.lock, "log");
-  readsb(dev, &sb, 0);
+  readsb(prt, &sb);
   log.start = sb.logstart;
   log.size = sb.nlog;
-  log.dev = dev;
+  log.dev = prt->dev;
   recover_from_log();
 }
 

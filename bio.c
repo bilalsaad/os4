@@ -27,6 +27,7 @@
 #include "fs.h"
 #include "buf.h"
 
+#define d2 cprintf("%d %s \n", __LINE__, __func__)
 struct {
   struct spinlock lock;
   struct buf buf[NBUF];

@@ -12,7 +12,7 @@ char buf[8192];
 char name[3];
 char *echoargv[] = { "echo", "ALL", "TESTS", "PASSED", 0 };
 int stdout = 1;
-
+#define d2 printf(1, "%d %s %d\n", __LINE__, __func__, getpid());
 // does chdir() call iput(p->cwd) in a transaction?
 void
 iputtest(void)
@@ -586,10 +586,11 @@ createdelete(void)
   enum { N = 20 };
   int pid, i, fd, pi;
   char name[32];
+  int PS = 2;
 
   printf(1, "createdelete test\n");
 
-  for(pi = 0; pi < 4; pi++){
+  for(pi = 0; pi < PS; pi++){
     pid = fork();
     if(pid < 0){
       printf(1, "fork failed\n");
@@ -601,6 +602,7 @@ createdelete(void)
       name[2] = '\0';
       for(i = 0; i < N; i++){
         name[1] = '0' + i;
+        printf(1, "creating %s \n", name);
         fd = open(name, O_CREATE | O_RDWR);
         if(fd < 0){
           printf(1, "create failed\n");
@@ -610,7 +612,7 @@ createdelete(void)
         if(i > 0 && (i % 2 ) == 0){
           name[1] = '0' + (i / 2);
           if(unlink(name) < 0){
-            printf(1, "unlink failed\n");
+            printf(1, "unlink failed on %s\n", name);
             exit();
           }
         }
@@ -619,13 +621,13 @@ createdelete(void)
     }
   }
 
-  for(pi = 0; pi < 4; pi++){
+  for(pi = 0; pi < PS; pi++){
     wait();
   }
-
+  d2;
   name[0] = name[1] = name[2] = 0;
   for(i = 0; i < N; i++){
-    for(pi = 0; pi < 4; pi++){
+    for(pi = 0; pi < PS; pi++){
       name[0] = 'p' + pi;
       name[1] = '0' + i;
       fd = open(name, 0);
@@ -642,7 +644,7 @@ createdelete(void)
   }
 
   for(i = 0; i < N; i++){
-    for(pi = 0; pi < 4; pi++){
+    for(pi = 0; pi < PS; pi++){
       name[0] = 'p' + i;
       name[1] = '0' + i;
       unlink(name);
@@ -1713,8 +1715,9 @@ main(int argc, char *argv[])
     exit();
   }
   close(open("usertests.ran", O_CREATE));
-
+  d2;
   createdelete();
+  d2;
   linkunlink();
   concreate();
   fourfiles();
