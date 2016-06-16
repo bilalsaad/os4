@@ -123,7 +123,7 @@ main(int argc, char *argv[])
     exit(1);
   }
   // create first partition
-  create_partition(&part,PART_BOOTABLE , FS_INODE, sb_off, xint(FSSIZE));
+  create_partition(&part, PART_ALLOCATED , FS_INODE, sb_off, xint(FSSIZE));
   add_partition(&mbr, &part, 0);
   // 1 fs block = 1 disk sector
   // Number of metadata blocks 1 super block 1 mbr the logs the inodes the

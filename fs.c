@@ -46,13 +46,14 @@ readmbr(int dev) {
   struct buf *bp;
   struct dpartition* part = mbr.partitions;
   int i;
+  struct superblock sb;
   bp = bread(dev, 0); // location of le mbr.
   memmove(&mbr, bp->data, sizeof(mbr));
   brelse(bp);
   // print output of partitions
   for (i = 0; i < NPARTITIONS; ++i) {
     if (part[i].flags != 0) {  // guess this means it exists.
-      cprintf("Partition %d; bootable %s, type %s, offset %p, size %p \n",
+      cprintf("Partition %d; bootable %s, type %s, offset %d, size %d \n",
           i, GET_BOOT((part + i)) == PART_BOOTABLE ? "YES" : "NO",
            part[i].type == FS_INODE ? "INODE" :
            part[i].type == FS_FAT ?   "FAT" :
@@ -60,6 +61,11 @@ readmbr(int dev) {
     }
     partitions[i].dev = dev; 
     partitions[i].prt = part[i];
+    readsb(&partitions[i], &sb);
+    cprintf("sb: size %d nblocks %d ninodes %d nlog %d logstart %d"
+        " inodestart %d bmap start %d\n\n", sb.size,
+        sb.nblocks, sb.ninodes, sb.nlog,
+        sb.logstart, sb.inodestart, sb.bmapstart);
   }
   while (part != mbr.partitions + NPARTITIONS) {
     if (GET_BOOT(part) == PART_BOOTABLE) {
@@ -196,19 +202,24 @@ struct {
   struct spinlock lock;
   struct inode inode[NINODE];
 } icache;
+
+static struct inode* iget(struct partition*, uint inum);
 void
 iinit(int dev)
 {
+  struct inode* ip;
   initlock(&icache.lock, "icache");
   readmbr(dev);
   readsb(boot_part, &sb);
+  // this should make sure that rooino->prt is the boot block.
+  ip = iget(boot_part, ROOTINO);
+  proc->cwd = ip;
   cprintf("sb: size %d nblocks %d ninodes %d nlog %d logstart %d"
           " inodestart %d bmap start %d\n", sb.size,
           sb.nblocks, sb.ninodes, sb.nlog,
           sb.logstart, sb.inodestart, sb.bmapstart);
 }
 
-static struct inode* iget(struct partition*, uint inum);
 
 //PAGEBREAK!
 // Allocate a new inode with the given type on device dev.
@@ -282,7 +293,6 @@ iget(struct partition* prt, uint inum)
   // Recycle an inode cache entry.
   if(empty == 0)
     panic("iget: no inodes");
-
   ip = empty;
   ip->prt = prt;
   ip->inum = inum;
@@ -312,11 +322,14 @@ ilock(struct inode *ip)
   struct buf *bp;
   struct dinode *dip;
   struct superblock sb;
-  if (ip->prt == 0)
-    ip->prt = boot_part;
   if(ip == 0 || ip->ref < 1)
     panic("ilock");
-
+  if (ip->prt == 0) {
+    d3; 
+    cprintf("ip w/- prt: %p : inum: %d major: %d minor: %d prt: %p\n", ip,
+        ip->inum, ip->major, ip->minor, ip->prt);
+    panic("ilock no partition");
+  }
   acquire(&icache.lock);
   while(ip->flags & I_BUSY)
     sleep(ip, &icache.lock);
@@ -657,19 +670,13 @@ namex(char *path, int nameiparent, char *name)
   if(*path == '/')
     ip = iget(boot_part, ROOTINO);
   else {
-    
     ip = idup(proc->cwd);
-    
   }
 
   while((path = skipelem(path, name)) != 0){
-    
     ilock(ip);
-    
     if(ip->type != T_DIR){
-      
       iunlockput(ip);
-      
       return 0;
     }
     

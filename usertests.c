@@ -602,7 +602,7 @@ createdelete(void)
       name[2] = '\0';
       for(i = 0; i < N; i++){
         name[1] = '0' + i;
-        printf(1, "creating %s \n", name);
+//        printf(1, "creating %s \n", name);
         fd = open(name, O_CREATE | O_RDWR);
         if(fd < 0){
           printf(1, "create failed\n");
@@ -612,7 +612,7 @@ createdelete(void)
         if(i > 0 && (i % 2 ) == 0){
           name[1] = '0' + (i / 2);
           if(unlink(name) < 0){
-            printf(1, "unlink failed on %s\n", name);
+//            printf(1, "unlink failed on %s\n", name);
             exit();
           }
         }

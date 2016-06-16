@@ -201,14 +201,12 @@ sys_unlink(void)
   if(namecmp(name, ".") == 0 || namecmp(name, "..") == 0)
     goto bad;
   if((ip = dirlookup(dp, name, &off)) == 0) {
-    d2;
     goto bad;
   }
   ilock(ip);
   if(ip->nlink < 1)
     panic("unlink: nlink < 1");
   if(ip->type == T_DIR && !isdirempty(ip)){
-    d2;
     iunlockput(ip);
     goto bad;
   }
@@ -231,8 +229,6 @@ bad:
   
   iunlockput(dp);
   end_op();
-  cprintf("failed to unlink %s \n", name);
-  panic("I AN RAMBOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO");
   return -1;
 }
 
@@ -255,7 +251,6 @@ create(char *path, short type, short major, short minor)
     iunlockput(ip);
     return 0;
   }
-
   if((ip = ialloc(dp->prt, type)) == 0)
     panic("create: ialloc");
   ilock(ip);
