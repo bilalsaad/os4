@@ -123,7 +123,7 @@ main(int argc, char *argv[])
     exit(1);
   }
   // create first partition
-  create_partition(&part, PART_ALLOCATED , FS_INODE, sb_off, xint(FSSIZE));
+  create_partition(&part, PART_BOOTABLE , FS_INODE, sb_off, xint(FSSIZE));
   add_partition(&mbr, &part, 0);
   // 1 fs block = 1 disk sector
   // Number of metadata blocks 1 super block 1 mbr the logs the inodes the
@@ -146,7 +146,6 @@ main(int argc, char *argv[])
   memmove(buf, &mbr, sizeof(mbr));
   wsect(0, buf);
 
-  balloc(freeblock);
 
   exit(0);
 }
@@ -402,6 +401,7 @@ uint init_partition(struct dpartition* part, struct init_part_opts* opts) {
   din.size = xint(off);
   winode(rootino, &din);
 
+  balloc(freeblock - (offset + nmeta));
   return rootino;
 } 
 
@@ -470,5 +470,6 @@ void allocated_handler(uint rootino, int argc, char ** argv) {
 
     close(fd);
   }
+
 }
 

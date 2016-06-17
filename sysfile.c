@@ -15,6 +15,9 @@
 #include "fcntl.h"
 #define d2 cprintf("%d %s \n", __LINE__, __func__)
 
+void print_in(struct inode* ip) {
+  cprintf("ip:add %p, ip:inum: %d, ip:prt %p \n", ip, ip->inum, ip->prt);
+}
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int
@@ -253,6 +256,9 @@ create(char *path, short type, short major, short minor)
   }
   if((ip = ialloc(dp->prt, type)) == 0)
     panic("create: ialloc");
+  if(proc && proc->pid > 2) {
+    //print_in(ip);
+  }
   ilock(ip);
   ip->major = major;
   ip->minor = minor;

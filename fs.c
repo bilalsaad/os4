@@ -21,7 +21,10 @@
 #include "file.h"
 #include "mbr.h"
 #define min(a, b) ((a) < (b) ? (a) : (b))
-
+#define psb   cprintf("sb: size %d nblocks %d ninodes %d nlog %d logstart %d" \
+        " inodestart %d bmap start %d\n\n", sb.size, \
+        sb.nblocks, sb.ninodes, sb.nlog, \
+        sb.logstart, sb.inodestart, sb.bmapstart);
 static void itrunc(struct inode*);
 int get_part();
 void set_part(int);
@@ -95,13 +98,19 @@ bzero(int dev, int bno)
 
 // Allocate a zeroed disk block.
 static uint
-balloc(uint dev)
+balloc(struct partition* prt)
 {
   int b, bi, m;
   struct buf *bp;
-
+  struct superblock sb;
+  uint dev = prt->dev;
+  readsb(prt, &sb);
+  psb;
   bp = 0;
   for(b = 0; b < sb.size; b += BPB){
+    if (proc && proc->pid > 2) {
+      //cprintf("bread(%d, %d) \n",dev, BBLOCK(b, sb));
+    }
     bp = bread(dev, BBLOCK(b, sb));
     for(bi = 0; bi < BPB && b + bi < sb.size; bi++){
       m = 1 << (bi % 8);
@@ -110,6 +119,9 @@ balloc(uint dev)
         log_write(bp);
         brelse(bp);
         bzero(dev, b + bi);
+        if(proc && proc->pid > 2) {
+          //cprintf("balloc'd %d \n", b+bi);
+        }
         return b + bi;
       }
     }
@@ -418,20 +430,25 @@ bmap(struct inode *ip, uint bn)
   struct buf *bp;
 
   if(bn < NDIRECT){
-    if((addr = ip->addrs[bn]) == 0)
-      ip->addrs[bn] = addr = balloc(ip->prt->dev);
+    if((addr = ip->addrs[bn]) == 0) {
+      ip->addrs[bn] = addr = balloc(ip->prt);
+      if (proc && proc->pid > 2) {
+        //cprintf("got addr %d \n", addr);
+      }
+    }
     return addr;
   }
   bn -= NDIRECT;
 
   if(bn < NINDIRECT){
     // Load indirect block, allocating if necessary.
-    if((addr = ip->addrs[NDIRECT]) == 0)
-      ip->addrs[NDIRECT] = addr = balloc(ip->prt->dev);
+    if((addr = ip->addrs[NDIRECT]) == 0) {
+      ip->addrs[NDIRECT] = addr = balloc(ip->prt);
+    }
     bp = bread(ip->prt->dev, addr);
     a = (uint*)bp->data;
     if((addr = a[bn]) == 0){
-      a[bn] = addr = balloc(ip->prt->dev);
+      a[bn] = addr = balloc(ip->prt);
       log_write(bp);
     }
     brelse(bp);

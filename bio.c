@@ -101,7 +101,7 @@ struct buf*
 bread(uint dev, uint blockno)
 {
   struct buf *b;
-
+  if (blockno == 1424) cprintf("getting block #%d \n", blockno);
   b = bget(dev, blockno);
   if(!(b->flags & B_VALID)) {
     iderw(b);
