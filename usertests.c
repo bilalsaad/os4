@@ -487,6 +487,7 @@ sharedfd(void)
     exit();
   else
     wait();
+  d2;
   close(fd);
   fd = open("sharedfd", 0);
   if(fd < 0){
@@ -503,7 +504,9 @@ sharedfd(void)
     }
   }
   close(fd);
+  d2;
   unlink("sharedfd");
+  d2;
   if(nc == 10000 && np == 10000){
     printf(1, "sharedfd ok\n");
   } else {
@@ -1720,7 +1723,7 @@ main(int argc, char *argv[])
   d2;
   linkunlink();
   concreate();
-  fourfiles();
+//  fourfiles();
   sharedfd();
 
   bigargtest();

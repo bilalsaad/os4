@@ -101,15 +101,17 @@ static uint
 balloc(struct partition* prt)
 {
   int b, bi, m;
+  uint freeblock_offset;
   struct buf *bp;
   struct superblock sb;
   uint dev = prt->dev;
   readsb(prt, &sb);
-  psb;
+//  psb;
+  freeblock_offset = sb.bmapstart + 1;
   bp = 0;
   for(b = 0; b < sb.size; b += BPB){
-    if (proc && proc->pid > 2) {
-      //cprintf("bread(%d, %d) \n",dev, BBLOCK(b, sb));
+    if (0 && proc && proc->pid > 2) {
+      cprintf("bread(%d, %d) \n",dev, BBLOCK(b, sb));
     }
     bp = bread(dev, BBLOCK(b, sb));
     for(bi = 0; bi < BPB && b + bi < sb.size; bi++){
@@ -118,11 +120,12 @@ balloc(struct partition* prt)
         bp->data[bi/8] |= m;  // Mark block in use.
         log_write(bp);
         brelse(bp);
-        bzero(dev, b + bi);
+        // TODO(bilals) should an offset be added here?
+        bzero(dev, freeblock_offset + b + bi);
         if(proc && proc->pid > 2) {
-          //cprintf("balloc'd %d \n", b+bi);
+          cprintf("balloc'd %d \n", freeblock_offset+b+bi);
         }
-        return b + bi;
+        return freeblock_offset + b + bi;
       }
     }
     brelse(bp);
@@ -136,13 +139,18 @@ bfree(struct partition* prt, uint b)
 {
   struct buf *bp;
   int bi, m;
+  uint freeblock_offset;
   struct superblock sb;
   readsb(prt, &sb);
+  freeblock_offset = sb.bmapstart + 1;
+  b = b - freeblock_offset ;
   bp = bread(prt->dev, BBLOCK(b, sb));
   bi = b % BPB;
   m = 1 << (bi % 8);
-  if((bp->data[bi/8] & m) == 0)
+  if((bp->data[bi/8] & m) == 0) {
+    cprintf("tried to free blockno %d \n", b);
     panic("freeing free block");
+  }
   bp->data[bi/8] &= ~m;
   log_write(bp);
   brelse(bp);
@@ -337,7 +345,6 @@ ilock(struct inode *ip)
   if(ip == 0 || ip->ref < 1)
     panic("ilock");
   if (ip->prt == 0) {
-    d3; 
     cprintf("ip w/- prt: %p : inum: %d major: %d minor: %d prt: %p\n", ip,
         ip->inum, ip->major, ip->minor, ip->prt);
     panic("ilock no partition");
@@ -432,9 +439,6 @@ bmap(struct inode *ip, uint bn)
   if(bn < NDIRECT){
     if((addr = ip->addrs[bn]) == 0) {
       ip->addrs[bn] = addr = balloc(ip->prt);
-      if (proc && proc->pid > 2) {
-        //cprintf("got addr %d \n", addr);
-      }
     }
     return addr;
   }
