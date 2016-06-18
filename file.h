@@ -8,6 +8,11 @@ struct file {
   uint off;
 };
 
+struct mnt_info {
+  int is_mnt;
+  struct partition* prt;
+  uint inum;
+};
 
 // in-memory copy of an inode
 struct inode {
@@ -15,6 +20,7 @@ struct inode {
   int ref;                              // Reference count
   int flags;                            // I_BUSY, I_VALID
   struct partition* prt;         // Which partition. also holds dev.
+  struct mnt_info mnt_info;
 
   short type;         // copy of disk inode
   short major;

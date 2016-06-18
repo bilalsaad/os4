@@ -20,11 +20,14 @@
 #include "buf.h"
 #include "file.h"
 #include "mbr.h"
+#include "x86.h"
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #define psb   cprintf("sb: size %d nblocks %d ninodes %d nlog %d logstart %d" \
         " inodestart %d bmap start %d\n\n", sb.size, \
         sb.nblocks, sb.ninodes, sb.nlog, \
         sb.logstart, sb.inodestart, sb.bmapstart);
+
+
 static void itrunc(struct inode*);
 int get_part();
 void set_part(int);
@@ -33,6 +36,27 @@ struct superblock sb;   // there should be one per dev, but we run with one dev
 struct partition partitions[NPARTITIONS];
 struct partition* boot_part;      // the partition we boot from.
 struct mbr mbr;         // the single mbr - only one mbr i hope to god.
+
+
+
+// Mount point table - paths that are mounted 
+
+struct mount_point {
+  int is_taken;
+  char path[DIRSIZ];  // which path we're talking bout.
+  struct partition* prt; // to which partition we're mounted.
+};
+struct {
+  struct mount_point pnts[MOUNT_POINTS_SIZE];
+}mount_points;
+
+// functions for the mount points;
+
+int mount(char* pth, int prt); // adds a new mount point with pth to prt prt.
+int is_mounted(char* path); // is the following path mounted or not??.
+
+
+
 
 // Read the super block.
 void
@@ -122,7 +146,7 @@ balloc(struct partition* prt)
         brelse(bp);
         // TODO(bilals) should an offset be added here?
         bzero(dev, freeblock_offset + b + bi);
-        if(proc && proc->pid > 2) {
+        if(0 && proc && proc->pid > 2) {
           cprintf("balloc'd %d \n", freeblock_offset+b+bi);
         }
         return freeblock_offset + b + bi;
@@ -318,6 +342,7 @@ iget(struct partition* prt, uint inum)
   ip->inum = inum;
   ip->ref = 1;
   ip->flags = 0;
+  ip->mnt_info.is_mnt = 0;
   release(&icache.lock);
 
   return ip;
@@ -677,7 +702,7 @@ skipelem(char *path, char *name)
     path++;
   return path;
 }
-
+static struct mount_point* find_mp(char* path);
 // Look up and return the inode for a path name.
 // If parent != 0, return the inode for the parent and copy the final
 // path element into name, which must have room for DIRSIZ bytes.
@@ -687,8 +712,9 @@ namex(char *path, int nameiparent, char *name)
 {
   struct inode *ip, *next;
 
-  
-  if(*path == '/')
+  if (is_mounted(path)) {
+    ip = iget(find_mp(path)->prt, ROOTINO);
+  } else if(*path == '/')
     ip = iget(boot_part, ROOTINO);
   else {
     ip = idup(proc->cwd);
@@ -748,9 +774,59 @@ int get_part() {
 }
 
 void set_part(int p) {
-  // TODO() should this be synchronized?? i think so.
   cur_part = p; 
 }
 struct partition* get_boot_block() {
   return boot_part;
 }
+
+static struct mount_point* find_mp(char* path) {
+  struct mount_point* it = mount_points.pnts;
+  while(it < MOUNT_POINTS_SIZE +  mount_points.pnts) {
+    if(namecmp(path, it->path) == 0){
+      return it;
+    }
+    ++it;
+  }
+  return 0;
+}
+
+static struct mount_point* mpalloc(struct mount_point* pnts) {
+  struct mount_point* it = pnts;
+  while (it < pnts + MOUNT_POINTS_SIZE) {
+    if (cas(&it->is_taken, 0, 1)){
+      return it;
+    }
+    ++it;
+  }
+  return 0;
+}
+
+int is_mounted(char* p) {
+  return find_mp(p) != 0;
+}
+// How should we deal with allready mounted paths?
+int mount(char* path, int i) {
+  struct mount_point* pnt;
+  d3;
+  if (is_mounted(path)) {
+    cprintf("trying to mount an allready mounted path - %s \n", path);
+    return -1;
+  }
+  pnt = mpalloc(mount_points.pnts); 
+  d3;
+  if (pnt == 0) {
+    cprintf("failed to alloc mp \n");
+    return -1;
+  }
+  d3;
+  cprintf("pnt: %p \n", pnt);
+  cprintf("pnt->path: %p \n", pnt->path);
+  cprintf("path: %p \n", path);
+  memmove(pnt->path, path, sizeof(pnt->path));  
+  d3;
+  pnt->prt = &partitions[i];
+  d3;
+  return 0;
+}
+

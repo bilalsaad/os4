@@ -30,6 +30,14 @@ outw(ushort port, ushort data)
   asm volatile("out %0,%1" : : "a" (data), "d" (port));
 }
 
+static inline int cas(volatile int* addr, int expected, int newval) {
+  int result = 0; 
+  asm volatile("lock; cmpxchgl %1, %2; sete %%al;":/* assembly code template */  
+               "=a"(result) : /* output parameters */
+               "r"(newval), "m"(*addr), "a"(expected) : /* input params */ 
+               "cc", "memory");
+  return result;
+}
 static inline void
 outsl(int port, const void *addr, int cnt)
 {

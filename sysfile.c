@@ -235,6 +235,8 @@ bad:
   return -1;
 }
 
+
+
 static struct inode*
 create(char *path, short type, short major, short minor)
 {
@@ -279,6 +281,16 @@ create(char *path, short type, short major, short minor)
   iunlockput(dp);
 
   return ip;
+}
+
+int
+sys_mount(void) {
+  char* path;
+  int prt;
+  d3;
+  if(argstr(0, &path) < 0 || argint(1, &prt) < 0)
+    return -1;
+  return mount(path, prt);
 }
 
 int
