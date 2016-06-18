@@ -314,6 +314,7 @@ sys_open(void)
     }
   } else {
     if((ip = namei(path)) == 0){
+      d2;
       end_op();
       return -1;
     }

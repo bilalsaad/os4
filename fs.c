@@ -26,6 +26,9 @@
         " inodestart %d bmap start %d\n\n", sb.size, \
         sb.nblocks, sb.ninodes, sb.nlog, \
         sb.logstart, sb.inodestart, sb.bmapstart);
+#define pinode(ip) \
+    cprintf("ip->inum: %d, ip->prt %p, boot_part %p \n", \
+        ip->inum, ip->prt, boot_part);
 
 
 static void itrunc(struct inode*);
@@ -45,6 +48,8 @@ struct mount_point {
   int is_taken;
   char path[DIRSIZ];  // which path we're talking bout.
   struct partition* prt; // to which partition we're mounted.
+  int old_i;
+  struct partition* old_prt;
 };
 struct {
   struct mount_point pnts[MOUNT_POINTS_SIZE];
@@ -605,23 +610,29 @@ namecmp(const char *s, const char *t)
   return strncmp(s, t, DIRSIZ);
 }
 
+static int is_inode_mounted(struct inode*, int*, struct partition**);
+
 // Look for a directory entry in a directory.
 // If found, set *poff to byte offset of entry.
 struct inode*
 dirlookup(struct inode *dp, char *name, uint *poff)
 {
   uint off, inum;
+  int mnt_in;
+  struct partition* mnt_prt;
   struct dirent de;
-
-  if(dp->type != T_DIR)
+  int flag = is_inode_mounted(dp, &mnt_in, &mnt_prt);
+  dp = flag ? iget(mnt_prt, mnt_in) : dp;
+  if(dp->type != T_DIR) {
+    pinode(dp);
     panic("dirlookup not DIR");
+  }
 
   for(off = 0; off < dp->size; off += sizeof(de)){
     if(readi(dp, (char*)&de, off, sizeof(de)) != sizeof(de))
       panic("dirlink read");
     if(de.inum == 0)
       continue;
-    //cprintf("COMPARING %s de: %s \n", name, de.name);
     if(namecmp(name, de.name) == 0){
       // entry matches path element
       if(poff)
@@ -703,6 +714,7 @@ skipelem(char *path, char *name)
   return path;
 }
 static struct mount_point* find_mp(char* path);
+#define d4 if (flag) d3
 // Look up and return the inode for a path name.
 // If parent != 0, return the inode for the parent and copy the final
 // path element into name, which must have room for DIRSIZ bytes.
@@ -711,15 +723,20 @@ static struct inode*
 namex(char *path, int nameiparent, char *name)
 {
   struct inode *ip, *next;
-
+  int flag = 0; 
   if (is_mounted(path)) {
     ip = iget(find_mp(path)->prt, ROOTINO);
+    path = "/"; 
+    flag = 1;
   } else if(*path == '/')
     ip = iget(boot_part, ROOTINO);
   else {
     ip = idup(proc->cwd);
   }
-
+  if (flag) {
+    cprintf("ip->inum: %d, ip->prt %p, boot_part %p \n",
+        ip->inum, ip->prt, boot_part);
+  }
   while((path = skipelem(path, name)) != 0){
     ilock(ip);
     if(ip->type != T_DIR){
@@ -734,6 +751,11 @@ namex(char *path, int nameiparent, char *name)
     }
     if((next = dirlookup(ip, name, 0)) == 0){
       iunlockput(ip);
+      cprintf("call to dirlookup failed w/ :  ");
+      cprintf("path:%s name: %s \n", path, name);
+      cprintf("ip->inum: %d, ip->prt %p, boot_part %p \n",
+          ip->inum, ip->prt, boot_part);
+      
       return 0;
     }
     iunlockput(ip);
@@ -753,7 +775,10 @@ namei(char *path)
   struct inode* ret;
   
   ret = namex(path, 0, name);
-  
+  if (!ret ) {
+    name[DIRSIZ] = 0;
+    cprintf("namex failed path %s name %s \n", path, name);
+  }  
   return ret;
 }
 
@@ -791,6 +816,20 @@ static struct mount_point* find_mp(char* path) {
   return 0;
 }
 
+static int is_inode_mounted(struct inode* in,
+    int* new_i, struct partition** new_p) {
+  struct mount_point* it = mount_points.pnts;
+  while(it < MOUNT_POINTS_SIZE +  mount_points.pnts) {
+    if(it->old_i == in->inum && it->old_prt == in->prt){
+      *new_i = ROOTINO;
+      *new_p = it->prt;
+      return 1;
+    }
+    ++it;
+  }
+  return 0;
+}
+
 static struct mount_point* mpalloc(struct mount_point* pnts) {
   struct mount_point* it = pnts;
   while (it < pnts + MOUNT_POINTS_SIZE) {
@@ -808,25 +847,24 @@ int is_mounted(char* p) {
 // How should we deal with allready mounted paths?
 int mount(char* path, int i) {
   struct mount_point* pnt;
-  d3;
+  struct inode* in = namei(path);
+  if (in == 0) {
+    cprintf("cannot mount non existing path %s \n", path);
+    return -1;
+  }
   if (is_mounted(path)) {
     cprintf("trying to mount an allready mounted path - %s \n", path);
     return -1;
   }
   pnt = mpalloc(mount_points.pnts); 
-  d3;
   if (pnt == 0) {
     cprintf("failed to alloc mp \n");
     return -1;
   }
-  d3;
-  cprintf("pnt: %p \n", pnt);
-  cprintf("pnt->path: %p \n", pnt->path);
-  cprintf("path: %p \n", path);
   memmove(pnt->path, path, sizeof(pnt->path));  
-  d3;
   pnt->prt = &partitions[i];
-  d3;
+  pnt->old_i = in->inum;
+  pnt->old_prt = in->prt;
   return 0;
 }
 
