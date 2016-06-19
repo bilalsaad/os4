@@ -43,7 +43,6 @@ struct mbr mbr;         // the single mbr - only one mbr i hope to god.
 
 
 // Mount point table - paths that are mounted 
-
 struct mount_point {
   int is_taken;
   char path[DIRSIZ];  // which path we're talking bout.
@@ -375,7 +374,7 @@ ilock(struct inode *ip)
   if(ip == 0 || ip->ref < 1)
     panic("ilock");
   if (ip->prt == 0) {
-    cprintf("ip w/- prt: %p : inum: %d major: %d minor: %d prt: %p\n", ip,
+    cprintf("ip w/- : inum: %d major: %d minor: %d prt: %p\n",
         ip->inum, ip->major, ip->minor, ip->prt);
     panic("ilock no partition");
   }
@@ -531,12 +530,12 @@ itrunc(struct inode *ip)
 void
 stati(struct inode *ip, struct stat *st)
 {
-  // TODO() what should be done with stat
   st->dev = ip->prt->dev;
   st->ino = ip->inum;
   st->type = ip->type;
   st->nlink = ip->nlink;
   st->size = ip->size;
+  st->prti = ip->prt - partitions;
 }
 
 //PAGEBREAK!
@@ -714,6 +713,7 @@ skipelem(char *path, char *name)
   return path;
 }
 static struct mount_point* find_mp(char* path);
+static struct inode* check_mounted(struct inode*);
 #define d4 if (flag) d3
 // Look up and return the inode for a path name.
 // If parent != 0, return the inode for the parent and copy the final
@@ -722,7 +722,7 @@ static struct mount_point* find_mp(char* path);
 static struct inode*
 namex(char *path, int nameiparent, char *name)
 {
-  struct inode *ip, *next;
+  struct inode *ip, *next, *tmp;
   int flag = 0; 
   if (is_mounted(path)) {
     ip = iget(find_mp(path)->prt, ROOTINO);
@@ -746,16 +746,13 @@ namex(char *path, int nameiparent, char *name)
     
     if(nameiparent && *path == '\0'){
       // Stop one level early.
+      tmp = check_mounted(ip);
+      pinode(ip);
       iunlock(ip);
-      return ip;
+      return tmp == 0 ? ip : tmp;
     }
     if((next = dirlookup(ip, name, 0)) == 0){
       iunlockput(ip);
-      cprintf("call to dirlookup failed w/ :  ");
-      cprintf("path:%s name: %s \n", path, name);
-      cprintf("ip->inum: %d, ip->prt %p, boot_part %p \n",
-          ip->inum, ip->prt, boot_part);
-      
       return 0;
     }
     iunlockput(ip);
@@ -775,10 +772,6 @@ namei(char *path)
   struct inode* ret;
   
   ret = namex(path, 0, name);
-  if (!ret ) {
-    name[DIRSIZ] = 0;
-    cprintf("namex failed path %s name %s \n", path, name);
-  }  
   return ret;
 }
 
@@ -834,6 +827,7 @@ static struct mount_point* mpalloc(struct mount_point* pnts) {
   struct mount_point* it = pnts;
   while (it < pnts + MOUNT_POINTS_SIZE) {
     if (cas(&it->is_taken, 0, 1)){
+      it->is_taken = 1;
       return it;
     }
     ++it;
@@ -865,6 +859,21 @@ int mount(char* path, int i) {
   pnt->prt = &partitions[i];
   pnt->old_i = in->inum;
   pnt->old_prt = in->prt;
+  cprintf("created mount point with %d %s old_inum:%d old_prt:%p newprt: %p\n",
+      pnt->is_taken, pnt->path, pnt->old_i, pnt->old_prt, pnt->prt);
   return 0;
+}
+
+static struct inode* check_mounted(struct inode* in) {
+  struct partition* mnt_prt;
+  int mnt_in;
+  struct inode* tmp;
+  int flag = is_inode_mounted(in, &mnt_in, &mnt_prt);
+  tmp = 0;
+  if (flag) {
+    cprintf("iget(%p, %d) \n", mnt_prt, mnt_in);
+    tmp = iget(mnt_prt, mnt_in);
+  }
+  return tmp;
 }
 

@@ -40,10 +40,11 @@ ls(char *path)
     close(fd);
     return;
   }
-  
+  printf(1,"--- name --- type --- inum --- sz --- prti --- \n");  
   switch(st.type){
   case T_FILE:
-    printf(1, "%s %d %d %d\n", fmtname(path), st.type, st.ino, st.size);
+    printf(1, "%s %d %d %d %d\n",
+        fmtname(path), st.type, st.ino, st.size, st.prti);
     break;
   
   case T_DIR:
@@ -63,7 +64,8 @@ ls(char *path)
         printf(1, "ls: cannot stat %s\n", buf);
         continue;
       }
-      printf(1, "%s %d %d %d\n", fmtname(buf), st.type, st.ino, st.size);
+      printf(1, "%s %d %d %d %d\n",
+          fmtname(buf), st.type, st.ino, st.size, st.prti);
     }
     break;
   }
