@@ -747,7 +747,6 @@ namex(char *path, int nameiparent, char *name)
     if(nameiparent && *path == '\0'){
       // Stop one level early.
       tmp = check_mounted(ip);
-      pinode(ip);
       iunlock(ip);
       return tmp == 0 ? ip : tmp;
     }
@@ -842,6 +841,7 @@ int is_mounted(char* p) {
 int mount(char* path, int i) {
   struct mount_point* pnt;
   struct inode* in = namei(path);
+  d3;
   if (in == 0) {
     cprintf("cannot mount non existing path %s \n", path);
     return -1;
@@ -855,7 +855,9 @@ int mount(char* path, int i) {
     cprintf("failed to alloc mp \n");
     return -1;
   }
-  memmove(pnt->path, path, sizeof(pnt->path));  
+  d3;
+  memmove(pnt->path, path, min(sizeof(pnt->path), strlen(path)));  
+  d3;
   pnt->prt = &partitions[i];
   pnt->old_i = in->inum;
   pnt->old_prt = in->prt;
@@ -871,7 +873,6 @@ static struct inode* check_mounted(struct inode* in) {
   int flag = is_inode_mounted(in, &mnt_in, &mnt_prt);
   tmp = 0;
   if (flag) {
-    cprintf("iget(%p, %d) \n", mnt_prt, mnt_in);
     tmp = iget(mnt_prt, mnt_in);
   }
   return tmp;

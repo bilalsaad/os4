@@ -246,9 +246,7 @@ create(char *path, short type, short major, short minor)
 
   if((dp = nameiparent(path, name)) == 0)
     return 0;
-  d3;
   ilock(dp);
-  d3;
 
   if((ip = dirlookup(dp, name, &off)) != 0){
     iunlockput(dp);
@@ -291,6 +289,7 @@ sys_mount(void) {
   int prt;
   if(argstr(0, &path) < 0 || argint(1, &prt) < 0)
     return -1;
+  d3;
   return mount(path, prt);
 }
 

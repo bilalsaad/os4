@@ -27,8 +27,8 @@ struct init_part_opts{
 #define NINODES 200
 #define PART 0
 #define d2 printf("%d %s \n", __LINE__, __func__);
-// Disk layout:
-// [ boot block | sb block | log | inode blocks | free bit map | data blocks ]
+// partition layout:
+// [sb block | log | inode blocks | free bit map | data blocks ]
 
 int nbitmap = FSSIZE/(BSIZE*8) + 1;
 int ninodeblocks = NINODES / IPB + 1;
@@ -377,7 +377,6 @@ uint init_partition(struct dpartition* part, struct init_part_opts* opts) {
   wsect(offset, buf);
   freeinode = 1;
   // I suppose every partition needs a root amiright?
-  // ialloc2 increments freeinodes
   rootino = ialloc(T_DIR);
   assert(rootino == ROOTINO); // the root should be the first inode.
   // now we want add the default dirents ".." and "." to the root.
