@@ -67,8 +67,12 @@ void
 readsb(struct partition* part, struct superblock *sb)
 {
   struct buf *bp;
+  uint offset = part->prt.offset;
   bp = bread(part->dev, part->prt.offset);
   memmove(sb, bp->data, sizeof(*sb));
+  sb->logstart += offset;
+  sb->inodestart += offset;
+  sb->bmapstart += offset;
   brelse(bp);
 }
 // reads the MBR from block 0 of ROOTDEV (w/e) stores the mbr and prints it out.

@@ -136,7 +136,7 @@ main(int argc, char *argv[])
   //lets try and add partitions here. 
   for(i = 1; i < NPARTITIONS; ++i) {
     create_partition(&part, PART_BOOTABLE, FS_INODE,
-        mbr.partitions[i-1].offset+ mbr.partitions[i-1].size,
+        mbr.partitions[i-1].offset + mbr.partitions[i-1].size,
         xint(FSSIZE));
     add_partition(&mbr, &part, i);
     // Now we want to initialize this partition.
@@ -359,7 +359,6 @@ uint init_partition(struct dpartition* part, struct init_part_opts* opts) {
   sb.size = xint(part->size);
   sb.nblocks = xint(nblocks);
   sb.ninodes = xint(NINODES);
-  sb.offset = offset; // should be where we on the disk..
   sb.nlog = xint(nlog);
   sb.logstart = xint(offset+1);  // this should be offset from the start of part
   sb.inodestart = xint(offset+1+nlog);  // see above
@@ -370,11 +369,6 @@ uint init_partition(struct dpartition* part, struct init_part_opts* opts) {
             " bitmap blocks %u) blocks %d total %d, freeblock %u \n",
          nmeta, nlog, ninodeblocks, nbitmap, nblocks, FSSIZE, freeblock);
 
-  // write le superblock.
-  memset(buf, 0, sizeof(buf));
-  memmove(buf, &sb, sizeof(sb));
-  // Write the super block to the #1 slot in the partition.
-  wsect(offset, buf);
   freeinode = 1;
   // I suppose every partition needs a root amiright?
   rootino = ialloc(T_DIR);
@@ -401,6 +395,14 @@ uint init_partition(struct dpartition* part, struct init_part_opts* opts) {
   winode(rootino, &din);
 
   balloc(freeblock - (offset + nmeta));
+  // write the superblock make the offsets relative now.
+  memset(buf, 0, sizeof(buf));
+  sb.logstart -= offset;
+  sb.inodestart -= offset;
+  sb.bmapstart -= offset; 
+  memmove(buf, &sb, sizeof(sb));
+  // Write the super block to the #1 slot in the partition.
+  wsect(offset, buf);
   return rootino;
 } 
 
