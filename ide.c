@@ -73,8 +73,8 @@ idestart(struct buf *b)
 {
   if(b == 0)
     panic("idestart");
-  if(b->blockno >= FSSIZE * 4) {
-    cprintf("the bad block is %p \n", b->blockno);
+  if(b->blockno >= FSSIZE + 375) {
+    cprintf("the bad block is %d \n", b->blockno);
     panic("incorrect blockno");
   }
   int sector_per_block =  BSIZE/SECTOR_SIZE;

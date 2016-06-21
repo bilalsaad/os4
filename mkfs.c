@@ -18,7 +18,7 @@
 #define static_assert(a, b) do { switch (0) case 0: case (a): ; } while (0)
 #endif
 
-typedef void (* root_writer)(uint rootino, int argc, char** files);
+typedef void (* root_writer)(uint rootino, int argc, char** files, uint offset);
 struct init_part_opts{
   root_writer root_writer; 
   int argc;
@@ -52,7 +52,7 @@ void add_partition(struct mbr* mbr, struct dpartition* part, int index);
 // creates a partition with the give fields.
 void create_partition(struct dpartition*, char, uint, uint, uint);
 
-void root_handler(uint rootino, int argc, char ** argv);
+void root_handler(uint rootino, int argc, char ** argv, uint offset);
 void allocated_handler(uint rootino, int argc, char ** argv);
 void balloc(int);
 void wsect(uint, void*);
@@ -60,7 +60,7 @@ void winode(uint, struct dinode*);
 void rinode(uint inum, struct dinode *ip);
 void rsect(uint sec, void *buf);
 uint ialloc(ushort type);
-void iappend(uint inum, void *p, int n);
+void iappend(uint inum, void *p, int n, uint offset);
 
 // convert to intel byte order
 ushort
@@ -134,7 +134,7 @@ main(int argc, char *argv[])
   init_partition(&part, &part_opts);
 
   //lets try and add partitions here. 
-  for(i = 1; i < NPARTITIONS; ++i) {
+  for(i = 1; 0 && i < NPARTITIONS; ++i) {
     create_partition(&part, PART_BOOTABLE, FS_INODE,
         mbr.partitions[i-1].offset + mbr.partitions[i-1].size,
         xint(FSSIZE));
@@ -237,7 +237,7 @@ balloc(int used)
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
 void
-iappend(uint inum, void *xp, int n)
+iappend(uint inum, void *xp, int n, uint offset)
 {
   char *p = (char*)xp;
   uint fbn, off, n1;
@@ -247,7 +247,7 @@ iappend(uint inum, void *xp, int n)
   uint x;
   rinode(inum, &din);
   off = xint(din.size);
-  //printf("append inum %d at off %d sz %d\n", inum, off, n);
+//  printf("append inum %d at off %d sz %d\n", inum, off, n);
   while(n > 0){
     fbn = off / BSIZE;
     assert(fbn < MAXFILE);
@@ -255,17 +255,17 @@ iappend(uint inum, void *xp, int n)
       if(xint(din.addrs[fbn]) == 0){
         din.addrs[fbn] = xint(freeblock++);
       }
-      x = xint(din.addrs[fbn]);
+      x = xint(din.addrs[fbn] + offset);
     } else {
       if(xint(din.addrs[NDIRECT]) == 0){
         din.addrs[NDIRECT] = xint(freeblock++);
       }
-      rsect(xint(din.addrs[NDIRECT]), (char*)indirect);
+      rsect(xint(din.addrs[NDIRECT]) + offset, (char*)indirect);
       if(indirect[fbn - NDIRECT] == 0){
         indirect[fbn - NDIRECT] = xint(freeblock++);
-        wsect(xint(din.addrs[NDIRECT]), (char*)indirect);
+        wsect(xint(din.addrs[NDIRECT]) + offset, (char*)indirect);
       }
-      x = xint(indirect[fbn-NDIRECT]);
+      x = xint(indirect[fbn-NDIRECT]) + offset;
     }
     n1 = min(n, (fbn + 1) * BSIZE - off);
     rsect(x, buf);
@@ -364,7 +364,7 @@ uint init_partition(struct dpartition* part, struct init_part_opts* opts) {
   sb.inodestart = xint(offset+1+nlog);  // see above
   sb.bmapstart = xint(offset+1+nlog+ninodeblocks);  // see above
 
-  freeblock = offset + nmeta;     // the first free block that we can allocate
+  freeblock = nmeta;     // the first free block that we can allocate
   printf("nmeta %d (boot, super, log blocks %u inode blocks %u,"
             " bitmap blocks %u) blocks %d total %d, freeblock %u \n",
          nmeta, nlog, ninodeblocks, nbitmap, nblocks, FSSIZE, freeblock);
@@ -378,15 +378,15 @@ uint init_partition(struct dpartition* part, struct init_part_opts* opts) {
   de.inum = xshort(rootino);
   strcpy(de.name, ".");
   // Now we want to add this dirent to the root inode - yikes.
-  iappend(rootino, &de, sizeof(de));
+  iappend(rootino, &de, sizeof(de), offset);
   // now we want to add "..";
   bzero(&de, sizeof(de));
   de.inum = xshort(rootino);
   strcpy(de.name, "..");
   // Now we want to add this dirent to the root inode - yikes.
-  iappend(rootino, &de, sizeof(de));
+  iappend(rootino, &de, sizeof(de), offset);
   if (opts)
-    opts->root_writer(rootino, opts->argc, opts->argv);
+    opts->root_writer(rootino, opts->argc, opts->argv, offset);
   // fix size of root inode dir. I.e make it a multiple of BSIZE.
   rinode(rootino, &din);
   off = xint(din.size);
@@ -394,7 +394,7 @@ uint init_partition(struct dpartition* part, struct init_part_opts* opts) {
   din.size = xint(off);
   winode(rootino, &din);
 
-  balloc(freeblock - (offset + nmeta));
+  balloc(freeblock);
   // write the superblock make the offsets relative now.
   memset(buf, 0, sizeof(buf));
   sb.logstart -= offset;
@@ -407,7 +407,7 @@ uint init_partition(struct dpartition* part, struct init_part_opts* opts) {
 } 
 
 
-void root_handler(uint rootino, int argc, char ** argv) {
+void root_handler(uint rootino, int argc, char ** argv, uint offset) {
   int fd, i;
   uint inum;
   char buf[BSIZE];
@@ -435,42 +435,12 @@ void root_handler(uint rootino, int argc, char ** argv) {
     bzero(&de, sizeof(de));
     de.inum = xshort(inum);
     strncpy(de.name, tmp, DIRSIZ);
-    iappend(rootino, &de, sizeof(de));
+    iappend(rootino, &de, sizeof(de), offset);
     // Write the file to the disk.
     while((cc = read(fd, buf, sizeof(buf))) > 0)
-      iappend(inum, buf, cc);
+      iappend(inum, buf, cc, offset);
 
     close(fd);
   }
-}
-
-void allocated_handler(uint rootino, int argc, char ** argv) {
-  int fd, i;
-  uint inum;
-  char buf[BSIZE];
-  struct dirent de;
-  int cc;
-  for(i = 0; i < argc; i++){
-    if((fd = open(argv[i], 0)) < 0){
-      perror(argv[i]);
-      exit(1);
-    }
-    
-    // For each file given the args - we create an Inode and write it to the
-    // disk.
-    inum = ialloc(T_FILE);
-    // Add a new directory entry to the root. with the new file info.
-    bzero(&de, sizeof(de));
-    de.inum = xshort(inum);
-    printf("writing to block %lu inode %d \n", IBLOCK(inum, sb), inum);
-    strncpy(de.name, argv[i], DIRSIZ);
-    iappend(rootino, &de, sizeof(de));
-    // Write the file to the disk.
-    while((cc = read(fd, buf, sizeof(buf))) > 0)
-      iappend(inum, buf, cc);
-
-    close(fd);
-  }
-
 }
 

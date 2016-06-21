@@ -15,9 +15,6 @@
 #include "fcntl.h"
 #define d2 cprintf("%d %s \n", __LINE__, __func__)
 
-void print_in(struct inode* ip) {
-  cprintf("ip:add %p, ip:inum: %d, ip:prt %p \n", ip, ip->inum, ip->prt);
-}
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int
@@ -289,7 +286,6 @@ sys_mount(void) {
   int prt;
   if(argstr(0, &path) < 0 || argint(1, &prt) < 0)
     return -1;
-  d3;
   return mount(path, prt);
 }
 
@@ -303,9 +299,8 @@ sys_open(void)
 
   if(argstr(0, &path) < 0 || argint(1, &omode) < 0)
     return -1;
-
   begin_op();
-
+  
   if(omode & O_CREATE){
     ip = create(path, T_FILE, 0, 0);
     if(ip == 0){

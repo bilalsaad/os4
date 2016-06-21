@@ -17,7 +17,6 @@ exec(char *path, char **argv)
   struct inode *ip;
   struct proghdr ph;
   pde_t *pgdir, *oldpgdir;
-
   begin_op();
   if((ip = namei(path)) == 0){
     end_op();
@@ -25,13 +24,11 @@ exec(char *path, char **argv)
   }
   ilock(ip);
   pgdir = 0;
-
   // Check ELF header
   if(readi(ip, (char*)&elf, 0, sizeof(elf)) < sizeof(elf))
     goto bad;
   if(elf.magic != ELF_MAGIC)
     goto bad;
-
   if((pgdir = setupkvm()) == 0)
     goto bad;
 

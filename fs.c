@@ -26,9 +26,6 @@
         " inodestart %d bmap start %d\n\n", sb.size, \
         sb.nblocks, sb.ninodes, sb.nlog, \
         sb.logstart, sb.inodestart, sb.bmapstart);
-#define pinode(ip) \
-    cprintf("ip->inum: %d, ip->prt %p, boot_part %p \n", \
-        ip->inum, ip->prt, boot_part);
 
 
 static void itrunc(struct inode*);
@@ -89,7 +86,7 @@ readmbr(int dev) {
   for (i = 0; i < NPARTITIONS; ++i) {
     if (part[i].flags != 0) {  // guess this means it exists.
       cprintf("Partition %d; bootable %s, type %s, offset %d, size %d \n",
-          i, GET_BOOT((part + i)) == PART_BOOTABLE ? "YES" : "NO",
+          i, (part + i)->flags & PART_BOOTABLE ? "YES" : "NO",
            part[i].type == FS_INODE ? "INODE" :
            part[i].type == FS_FAT ?   "FAT" :
            "???", part[i].offset, part[i].size);
@@ -97,13 +94,13 @@ readmbr(int dev) {
     partitions[i].dev = dev; 
     partitions[i].prt = part[i];
     readsb(&partitions[i], &sb);
-    cprintf("sb: size %d nblocks %d ninodes %d nlog %d logstart %d"
+    /*cprintf("sb: size %d nblocks %d ninodes %d nlog %d logstart %d"
         " inodestart %d bmap start %d\n\n", sb.size,
         sb.nblocks, sb.ninodes, sb.nlog,
-        sb.logstart, sb.inodestart, sb.bmapstart);
+        sb.logstart, sb.inodestart, sb.bmapstart); */
   }
   while (part != mbr.partitions + NPARTITIONS) {
-    if (GET_BOOT(part) == PART_BOOTABLE) {
+    if (part->flags & PART_BOOTABLE) {
       set_part(part - mbr.partitions);
       boot_part = partitions + (part - mbr.partitions);
       cprintf("setting current partition to %d \n", part - mbr.partitions);
@@ -139,7 +136,7 @@ balloc(struct partition* prt)
   uint dev = prt->dev;
   readsb(prt, &sb);
 //  psb;
-  freeblock_offset = sb.bmapstart + 1;
+  freeblock_offset = sb.bmapstart + 1 - prt->prt.offset;
   bp = 0;
   for(b = 0; b < sb.size; b += BPB){
     if (0 && proc && proc->pid > 2) {
@@ -153,7 +150,7 @@ balloc(struct partition* prt)
         log_write(bp);
         brelse(bp);
         // TODO(bilals) should an offset be added here?
-        bzero(dev, freeblock_offset + b + bi);
+        bzero(dev, freeblock_offset + b + bi + prt->prt.offset);
         if(0 && proc && proc->pid > 2) {
           cprintf("balloc'd %d \n", freeblock_offset+b+bi);
         }
@@ -482,7 +479,7 @@ bmap(struct inode *ip, uint bn)
     if((addr = ip->addrs[NDIRECT]) == 0) {
       ip->addrs[NDIRECT] = addr = balloc(ip->prt);
     }
-    bp = bread(ip->prt->dev, addr);
+    bp = bread(ip->prt->dev, addr + ip->prt->prt.offset);
     a = (uint*)bp->data;
     if((addr = a[bn]) == 0){
       a[bn] = addr = balloc(ip->prt);
@@ -506,23 +503,24 @@ itrunc(struct inode *ip)
   int i, j;
   struct buf *bp;
   uint *a;
+  struct dpartition* prt = &ip->prt->prt;
 
   for(i = 0; i < NDIRECT; i++){
     if(ip->addrs[i]){
-      bfree(ip->prt, ip->addrs[i]);
+      bfree(ip->prt, ip->addrs[i] + prt->offset);
       ip->addrs[i] = 0;
     }
   }
   
   if(ip->addrs[NDIRECT]){
-    bp = bread(ip->prt->dev, ip->addrs[NDIRECT]);
+    bp = bread(ip->prt->dev, ip->addrs[NDIRECT] + prt->offset);
     a = (uint*)bp->data;
     for(j = 0; j < NINDIRECT; j++){
       if(a[j])
-        bfree(ip->prt, a[j]);
+        bfree(ip->prt, a[j] + prt->offset);
     }
     brelse(bp);
-    bfree(ip->prt, ip->addrs[NDIRECT]);
+    bfree(ip->prt, ip->addrs[NDIRECT] + prt->offset);
     ip->addrs[NDIRECT] = 0;
   }
 
@@ -549,6 +547,7 @@ readi(struct inode *ip, char *dst, uint off, uint n)
 {
   uint tot, m;
   struct buf *bp;
+  struct dpartition* prt = &ip->prt->prt;
 
   if(ip->type == T_DEV){
     if(ip->major < 0 || ip->major >= NDEV || !devsw[ip->major].read)
@@ -562,7 +561,7 @@ readi(struct inode *ip, char *dst, uint off, uint n)
     n = ip->size - off;
 
   for(tot=0; tot<n; tot+=m, off+=m, dst+=m){
-    bp = bread(ip->prt->dev, bmap(ip, off/BSIZE));
+    bp = bread(ip->prt->dev, bmap(ip, off/BSIZE) + prt->offset);
     m = min(n - tot, BSIZE - off%BSIZE);
     memmove(dst, bp->data + off%BSIZE, m);
     brelse(bp);
@@ -577,6 +576,7 @@ writei(struct inode *ip, char *src, uint off, uint n)
 {
   uint tot, m;
   struct buf *bp;
+  struct dpartition* prt = &ip->prt->prt;
 
   if(ip->type == T_DEV){
     if(ip->major < 0 || ip->major >= NDEV || !devsw[ip->major].write)
@@ -590,7 +590,7 @@ writei(struct inode *ip, char *src, uint off, uint n)
     return -1;
 
   for(tot=0; tot<n; tot+=m, off+=m, src+=m){
-    bp = bread(ip->prt->dev, bmap(ip, off/BSIZE));
+    bp = bread(ip->prt->dev, bmap(ip, off/BSIZE) + prt->offset);
     m = min(n - tot, BSIZE - off%BSIZE);
     memmove(bp->data + off%BSIZE, src, m);
     log_write(bp);
@@ -627,10 +627,8 @@ dirlookup(struct inode *dp, char *name, uint *poff)
   int flag = is_inode_mounted(dp, &mnt_in, &mnt_prt);
   dp = flag ? iget(mnt_prt, mnt_in) : dp;
   if(dp->type != T_DIR) {
-    pinode(dp);
     panic("dirlookup not DIR");
   }
-
   for(off = 0; off < dp->size; off += sizeof(de)){
     if(readi(dp, (char*)&de, off, sizeof(de)) != sizeof(de))
       panic("dirlink read");
@@ -727,19 +725,15 @@ static struct inode*
 namex(char *path, int nameiparent, char *name)
 {
   struct inode *ip, *next, *tmp;
-  int flag = 0; 
+//  int flag = 0; 
   if (is_mounted(path)) {
     ip = iget(find_mp(path)->prt, ROOTINO);
     path = "/"; 
-    flag = 1;
-  } else if(*path == '/')
+  } else if(*path == '/') {
     ip = iget(boot_part, ROOTINO);
+  }
   else {
     ip = idup(proc->cwd);
-  }
-  if (flag) {
-    cprintf("ip->inum: %d, ip->prt %p, boot_part %p \n",
-        ip->inum, ip->prt, boot_part);
   }
   while((path = skipelem(path, name)) != 0){
     ilock(ip);
@@ -845,7 +839,6 @@ int is_mounted(char* p) {
 int mount(char* path, int i) {
   struct mount_point* pnt;
   struct inode* in = namei(path);
-  d3;
   if (in == 0) {
     cprintf("cannot mount non existing path %s \n", path);
     return -1;
@@ -859,9 +852,7 @@ int mount(char* path, int i) {
     cprintf("failed to alloc mp \n");
     return -1;
   }
-  d3;
   memmove(pnt->path, path, min(sizeof(pnt->path), strlen(path)));  
-  d3;
   pnt->prt = &partitions[i];
   pnt->old_i = in->inum;
   pnt->old_prt = in->prt;

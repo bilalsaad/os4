@@ -465,10 +465,9 @@ void
 sharedfd(void)
 {
   int fd, pid, i, n, nc, np;
-  char buf[10];
+  char buf[100];
 
   printf(1, "sharedfd test\n");
-
   unlink("sharedfd");
   fd = open("sharedfd", O_CREATE|O_RDWR);
   if(fd < 0){
@@ -477,7 +476,7 @@ sharedfd(void)
   }
   pid = fork();
   memset(buf, pid==0?'c':'p', sizeof(buf));
-  for(i = 0; i < 1000; i++){
+  for(i = 0; i < 100; i++){
     if(write(fd, buf, sizeof(buf)) != sizeof(buf)){
       printf(1, "fstests: write sharedfd failed\n");
       break;
@@ -487,7 +486,6 @@ sharedfd(void)
     exit();
   else
     wait();
-  d2;
   close(fd);
   fd = open("sharedfd", 0);
   if(fd < 0){
@@ -504,9 +502,7 @@ sharedfd(void)
     }
   }
   close(fd);
-  d2;
   unlink("sharedfd");
-  d2;
   if(nc == 10000 && np == 10000){
     printf(1, "sharedfd ok\n");
   } else {
@@ -627,7 +623,6 @@ createdelete(void)
   for(pi = 0; pi < PS; pi++){
     wait();
   }
-  d2;
   name[0] = name[1] = name[2] = 0;
   for(i = 0; i < N; i++){
     for(pi = 0; pi < PS; pi++){
@@ -1718,12 +1713,10 @@ main(int argc, char *argv[])
     exit();
   }
   close(open("usertests.ran", O_CREATE));
-  d2;
   createdelete();
-  d2;
   linkunlink();
   concreate();
-//  fourfiles();
+  fourfiles();
   sharedfd();
 
   bigargtest();
