@@ -73,7 +73,7 @@ idestart(struct buf *b)
 {
   if(b == 0)
     panic("idestart");
-  if(b->blockno >= FSSIZE + 375) {
+  if(b->blockno >= 5*FSSIZE) {
     cprintf("the bad block is %d \n", b->blockno);
     panic("incorrect blockno");
   }

@@ -134,7 +134,7 @@ main(int argc, char *argv[])
   init_partition(&part, &part_opts);
 
   //lets try and add partitions here. 
-  for(i = 1; 0 && i < NPARTITIONS; ++i) {
+  for(i = 1;  i < NPARTITIONS; ++i) {
     create_partition(&part, PART_BOOTABLE, FS_INODE,
         mbr.partitions[i-1].offset + mbr.partitions[i-1].size,
         xint(FSSIZE));
