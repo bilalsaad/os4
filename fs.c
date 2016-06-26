@@ -94,10 +94,10 @@ readmbr(int dev) {
     partitions[i].dev = dev; 
     partitions[i].prt = part[i];
     readsb(&partitions[i], &sb);
-    /*cprintf("sb: size %d nblocks %d ninodes %d nlog %d logstart %d"
+    cprintf("sb: size %d nblocks %d ninodes %d nlog %d logstart %d"
         " inodestart %d bmap start %d\n\n", sb.size,
         sb.nblocks, sb.ninodes, sb.nlog,
-        sb.logstart, sb.inodestart, sb.bmapstart); */
+        sb.logstart, sb.inodestart, sb.bmapstart); 
   }
   while (part != mbr.partitions + NPARTITIONS) {
     if (part->flags & PART_BOOTABLE) {
@@ -615,6 +615,13 @@ namecmp(const char *s, const char *t)
 
 static int is_inode_mounted(struct inode*, int*, struct partition**);
 
+static struct inode* foo(struct inode* ip) {
+  int mnt_in;
+  struct partition* mnt_prt;
+
+  int flag = is_inode_mounted(ip, &mnt_in, &mnt_prt);
+  return flag ? iget(mnt_prt, mnt_in) : ip;
+}
 // Look for a directory entry in a directory.
 // If found, set *poff to byte offset of entry.
 struct inode*
@@ -626,6 +633,9 @@ dirlookup(struct inode *dp, char *name, uint *poff)
   struct dirent de;
   int flag = is_inode_mounted(dp, &mnt_in, &mnt_prt);
   dp = flag ? iget(mnt_prt, mnt_in) : dp;
+  if (flag) {
+    ilock(dp);
+  }
   if(dp->type != T_DIR) {
     panic("dirlookup not DIR");
   }
@@ -639,9 +649,11 @@ dirlookup(struct inode *dp, char *name, uint *poff)
       if(poff)
         *poff = off;
       inum = de.inum;
-      return iget(dp->prt, inum);
+      if(flag) iunlock(dp);
+      return foo(iget(dp->prt, inum));
    }
   }
+  if(flag) iunlock(dp);
   return 0;
 }
 
@@ -726,7 +738,7 @@ namex(char *path, int nameiparent, char *name)
 {
   struct inode *ip, *next, *tmp;
 //  int flag = 0; 
-  if (is_mounted(path)) {
+  if (0 && is_mounted(path)) {
     ip = iget(find_mp(path)->prt, ROOTINO);
     path = "/"; 
   } else if(*path == '/') {
@@ -843,6 +855,7 @@ int mount(char* path, int i) {
     cprintf("cannot mount non existing path %s \n", path);
     return -1;
   }
+  ilock(in);
   if (is_mounted(path)) {
     cprintf("trying to mount an allready mounted path - %s \n", path);
     return -1;
@@ -858,6 +871,7 @@ int mount(char* path, int i) {
   pnt->old_prt = in->prt;
   cprintf("created mount point with %d %s old_inum:%d old_prt:%p newprt: %p\n",
       pnt->is_taken, pnt->path, pnt->old_i, pnt->old_prt, pnt->prt);
+  iunlockput(in);
   return 0;
 }
 

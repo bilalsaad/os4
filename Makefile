@@ -212,8 +212,8 @@ QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
 ifndef CPUS
 CPUS := 2
 endif
-QEMUOPTS = -hdb fs.img fs.img -smp $(CPUS) -m 512 $(QEMUEXTRA)
-#QEMUOPTS = -hdb vadimfs.img xv6.img -smp $(CPUS) -m 512 $(QEMUEXTRA)
+#QEMUOPTS = -hdb fs.img fs.img -smp $(CPUS) -m 512 $(QEMUEXTRA)
+QEMUOPTS = -hdb vadimfs1.img xv6.img -smp $(CPUS) -m 512 $(QEMUEXTRA)
 
 qemu: fs.img xv6.img
 	$(QEMU) -serial mon:stdio $(QEMUOPTS)
